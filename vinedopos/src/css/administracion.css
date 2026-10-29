@@ -1,0 +1,94 @@
+/*
+ * ============================================================================
+ * ARCHIVO: src/css/administracion.css
+ * PANTALLA: /administracion  (src/js/administracion.js)
+ * CONTENIDO: fondo del local y menú de botones de administración.
+ * ============================================================================
+ */
+body {
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+  margin: 0;
+}
+
+.App-body {
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.admin-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+  box-sizing: border-box;
+}
+
+.TablaBotones {
+  color: black;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background-color: rgba(255, 255, 255, 0.72);
+  min-height: 320px;
+  width: 100%;
+  max-width: 420px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  padding: 40px 24px;
+  box-sizing: border-box;
+}
+
+#btAdmins {
+  font-family: "Noto Serif";
+  width: 100%;
+  max-width: 280px;
+  padding: 0.8rem 1rem;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+  color: #fff;
+  font-size: 1.3rem;
+  font-weight: 600;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 20px rgba(31, 41, 55, 0.18);
+  text-align: center;
+}
+
+#btAdmins:hover,
+#btAdmins:focus {
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  color: #fff;
+}
+
+#btAdmins:active {
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+}
+
+@media all and (max-width: 600px) {
+  .admin-container {
+    padding: 24px 12px;
+  }
+
+  .TablaBotones {
+    min-height: 280px;
+    padding: 28px 18px;
+    border-radius: 12px;
+  }
+
+  #btAdmins {
+    font-size: 1.2rem;
+    max-width: 100%;
+  }
+}

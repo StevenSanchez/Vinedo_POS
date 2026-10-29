@@ -1,0 +1,327 @@
+/**
+ * ============================================================================
+ * ARCHIVO: src/js/mesas.js
+ * PROPÓSITO: mapa de mesas libres/ocupadas y selección de mesa.
+ *
+ * CÓMO SABE SI UNA MESA ESTÁ OCUPADA:
+ *   Cruza GET /mesas/ con GET /mesas/use/ (facturas con estado = 1).
+ *   Agrupa TODAS las facturas abiertas por MesaID, porque una mesa puede
+ *   tener varias cuentas (una factura por cuenta). Pinta el botón como
+ *   ocupado e indica cuántas cuentas tiene. No hay columna de estado en `mesa`.
+ *
+ * ACTUALIZACIÓN:
+ *   - Polling cada 5 segundos.
+ *   - Refresco al recuperar foco de la ventana y al volver a la pestaña.
+ *   - Limpia intervalo y listeners en componentWillUnmount.
+ *
+ * ACCIONES:
+ *   - Clic en mesa: guarda el objeto de la mesa en la cookie `MesaID`
+ *     (MesaID, Nombre, FacturaID de referencia, cuentas, estado...) y navega
+ *     a /pedidos. Pedidos vuelve a consultar las cuentas reales al abrir.
+ *   - Agregar mesa: POST /mesas/add/
+ *   - Eliminar mesa: POST /mesas/delete/ (bloqueado si hay cuentas abiertas)
+ *
+ * CUIDADO: no asumir una sola factura por mesa. La mesa sigue ocupada
+ * mientras tenga al menos una cuenta abierta. Ver consulta 13.1.
+ * ============================================================================
+ */
+import React from "react";
+import "bootstrap/dist/css/bootstrap.min.css"
+import 'bootstrap-icons/font/bootstrap-icons.css';
+import "../css/mesas.css";
+import IpRed from "../components/IpRed";
+import axios from "axios";
+import Cookies from 'universal-cookie';
+import { Navbar, Nav, Container, NavDropdown, Modal, Button, Form } from 'react-bootstrap'
+import { ruta } from "../Ruta/ruta"
+import DropdownItem from "react-bootstrap/esm/DropdownItem";
+import Swal from "sweetalert2";
+import logo from "../images/logo.png"; // Ajusta los '..' según la ubicación de tu componente
+const baseUrl = ruta.baseUrl;
+const cookies = new Cookies();
+class mesas extends React.Component {
+  state = {
+    mesasDB: [],
+    mesasOcupadas: [],
+    nombreMN: '',
+    modalInsert: false,
+    modoOrdenar: false
+  }
+
+  setearVacio() {
+    this.setState({
+      mesasDB: [],
+      mesasOcupadas: [],
+      nombreMN: '',
+      modalInsert: false
+    })
+  }
+  cerrarSesion = () => {
+    this.setearVacio()
+    cookies.remove('idUsuario', { path: "/" })
+    cookies.remove('usuario', { path: "/" })
+    window.location.href = "/login"
+  }
+  refrescarmesas = async () => {
+    const mesasTemp = await axios.get(baseUrl + "mesas/")
+    const facturasTemp = await axios.get(baseUrl + "mesas/use/")
+    const mesas = mesasTemp.data
+    const facturasEnUso = facturasTemp.data || []
+    // Una mesa puede tener varias facturas abiertas (una por cuenta)
+    const cuentasPorMesa = {}
+    for (let j = 0; j < facturasEnUso.length; j++) {
+      const factura = facturasEnUso[j]
+      if (Number(factura.estado) !== 1) continue
+      if (!cuentasPorMesa[factura.MesaID]) {
+        cuentasPorMesa[factura.MesaID] = []
+      }
+      cuentasPorMesa[factura.MesaID].push(factura)
+    }
+    var lista = []
+    for (let i = 0; i < mesas.length; i++) {
+      const cuentas = cuentasPorMesa[mesas[i].MesaID] || []
+      const primera = cuentas[0]
+      var mesaTemp = {
+        MesaID: mesas[i].MesaID,
+        Nombre: mesas[i].Nombre,
+        FacturaID: primera ? primera.FacturaID : null,
+        Hora: primera ? primera.Hora : null,
+        Fecha: primera ? primera.Fecha : null,
+        estado: primera ? primera.estado : null,
+        cuentas: cuentas.length,
+        botonID: cuentas.length > 0 ? "btMesaUse" : "btMesa"
+      }
+      lista.push(mesaTemp)
+    }
+    this.setState({ mesasDB: lista })
+  }
+  componentDidMount() {
+    if (!cookies.get('idUsuario')) {
+      window.location.href = "/login"
+    } else {
+      this.refrescarmesas()
+      this._refreshInterval = setInterval(() => {
+        this.refrescarmesas()
+      }, 5000)
+      this._onFocus = () => {
+        this.refrescarmesas()
+      }
+      this._onVisibility = () => {
+        if (document.visibilityState === 'visible') {
+          this.refrescarmesas()
+        }
+      }
+      window.addEventListener('focus', this._onFocus)
+      document.addEventListener('visibilitychange', this._onVisibility)
+    }
+  }
+
+  componentWillUnmount() {
+    if (this._refreshInterval) {
+      clearInterval(this._refreshInterval)
+      this._refreshInterval = null
+    }
+    if (this._onFocus) {
+      window.removeEventListener('focus', this._onFocus)
+    }
+    if (this._onVisibility) {
+      document.removeEventListener('visibilitychange', this._onVisibility)
+    }
+  }
+
+  redirectPage(mesa) {
+    cookies.set('MesaID', mesa, { path: "/" })
+    this.setearVacio()
+    window.location.href = "/pedidos"
+  }
+  mostrarModal() {
+    this.setState({ modalInsert: true })
+  }
+  handleChange = e => {
+    this.setState({
+      ...this.state,
+      [e.target.name]: e.target.value
+    })
+
+  }
+  ocultarModal() {
+    this.setState({ modalInsert: false, nombreMN: '' })
+  }
+  insertarMesa = async () => {
+    const newMesa = { mesa: this.state.nombreMN }
+    await axios.post(baseUrl + "mesas/add/", newMesa)
+      .then((res) => {
+        Swal.fire(res.data,"","info")
+      })
+    this.setState({ modalInsert: false })
+    this.refrescarmesas()
+  }
+
+  toggleOrdenar = () => {
+    const nuevoModo = !this.state.modoOrdenar
+    this.setState({ modoOrdenar: nuevoModo }, () => {
+      if (!nuevoModo) this.guardarOrden()
+    })
+  }
+
+  moverMesa = (index, direccion) => {
+    const mesasDB = [...this.state.mesasDB]
+    const nuevoIndex = index + direccion
+    if (nuevoIndex < 0 || nuevoIndex >= mesasDB.length) return
+    const temp = mesasDB[index]
+    mesasDB[index] = mesasDB[nuevoIndex]
+    mesasDB[nuevoIndex] = temp
+    this.setState({ mesasDB }, () => this.guardarOrden())
+  }
+
+  guardarOrden = async () => {
+    const ordenes = (this.state.mesasDB || []).map((mesa, index) => ({
+      MesaID: mesa.MesaID,
+      orden: index + 1
+    }))
+    try {
+      await axios.post(baseUrl + "mesas/ordenar", { ordenes })
+    } catch (e) {
+      // Ignorar errores para no interrumpir el uso
+    }
+  }
+  eliminarmesa = async (mesa) => {
+    if (Number(mesa.cuentas || 0) > 0) {
+      Swal.fire(
+        "Mesa con cuentas abiertas",
+        mesa.Nombre + " tiene " + mesa.cuentas + " cuenta(s) abierta(s). Cóbrelas o elimínelas antes de borrar la mesa.",
+        "warning"
+      )
+      return
+    }
+    const confirmacion = await Swal.fire({
+      title: "¿Eliminar " + mesa.Nombre + "?",
+      text: "Esta acción no se puede deshacer.",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Eliminar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280"
+    })
+    if (!confirmacion.isConfirmed) return
+    const mes = { MesaID: mesa.MesaID }
+    try {
+      const resp = await axios.post(baseUrl + "mesas/delete/", mes)
+      Swal.fire(typeof resp.data === "string" ? resp.data : "Mesa eliminada", "", "success")
+      this.refrescarmesas()
+    } catch (error) {
+      const mensaje =
+        (error.response && error.response.data && error.response.data.error) ||
+        "No se pudo eliminar la mesa."
+      Swal.fire("No se eliminó la mesa", mensaje, "warning")
+    }
+  }
+  render() {
+    return (
+      <body className="App-body">
+        <div>
+          <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
+            <Container>
+              <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
+                <img
+                  src={logo}
+                  alt="Logo ViñedoPos"
+                  width="35"
+                  height="35"
+                  className="d-inline-block align-top"
+                />
+                <span>VinedoPos</span>
+              </Navbar.Brand>
+              <Navbar.Toggle aria-controls="responsive-navbar-nav" />
+              <Navbar.Collapse id="responsive-navbar-nav">
+                <Nav className="me-auto">
+                  <Nav.Link href="/administracion">
+                    <button id="btNavbar" >Administración</button>
+                  </Nav.Link>
+                  <Nav.Link>
+                    <button id="btNavbar" onClick={() => this.mostrarModal()}>Agregar Mesa</button>
+                  </Nav.Link>
+                  <Nav.Link>
+                    <button id="btNavbar" onClick={() => this.toggleOrdenar()}>{this.state.modoOrdenar ? "Guardar orden" : "Ordenar mesas"}</button>
+                  </Nav.Link>
+                  <NavDropdown title="Eliminar mesa">
+                    {this.state.mesasDB.map((mesa, index) => (
+                      <DropdownItem key={index} onClick={() => this.eliminarmesa(mesa)}>{mesa.Nombre}</DropdownItem>
+                    ))}
+                  </NavDropdown>
+                </Nav>
+                <Nav>
+                  <Nav.Link>
+                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                  </Nav.Link>
+                </Nav>
+              </Navbar.Collapse>
+            </Container>
+          </Navbar>
+        </div>
+        <div className="TablaMesas">
+          <table id="tbMesas">
+            {this.state.mesasDB.map((mesa, index) => (
+              <div key={mesa.MesaID} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                {this.state.modoOrdenar && (
+                  <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-light"
+                      style={{ padding: '0 6px', lineHeight: 1 }}
+                      onClick={() => this.moverMesa(index, -1)}
+                      disabled={index === 0}
+                      title="Subir"
+                    >
+                      <i className="bi bi-chevron-up"></i>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-light"
+                      style={{ padding: '0 6px', lineHeight: 1 }}
+                      onClick={() => this.moverMesa(index, 1)}
+                      disabled={index === this.state.mesasDB.length - 1}
+                      title="Bajar"
+                    >
+                      <i className="bi bi-chevron-down"></i>
+                    </button>
+                  </div>
+                )}
+                <button
+                  id={mesa.botonID}
+                  style={this.state.modoOrdenar ? { cursor: 'default', flex: 1, minWidth: 0 } : { flex: 1, minWidth: 0 }}
+                  onClick={() => { if (!this.state.modoOrdenar) this.redirectPage(mesa) }}
+                  title={this.state.modoOrdenar ? mesa.Nombre + " · use las flechas para reordenar" : (mesa.cuentas > 0 ? mesa.Nombre + " · " + mesa.cuentas + " cuenta(s)" : mesa.Nombre)}
+                >
+                  {mesa.Nombre}
+                  {mesa.cuentas > 1 && (
+                    <span className="mesa-cuentas">{mesa.cuentas} cuentas</span>
+                  )}
+                </button>
+              </div>
+            ))}
+          </table>
+        </div>
+        <Modal show={this.state.modalInsert} onHide={() => this.ocultarModal()} centered className="mesa-modal">
+          <Modal.Header closeButton>
+            <Modal.Title><i className="bi bi-plus-circle"></i> Agregar mesa</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form.Group>
+              <Form.Label className="mesa-label">Nombre de la mesa</Form.Label>
+              <Form.Control name="nombreMN" type="text" placeholder="Ej. Mesa 10" onChange={this.handleChange} autoFocus />
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={() => this.ocultarModal()}>Cancelar</Button>
+            <Button variant="success" onClick={() => this.insertarMesa()}><i className="bi bi-check-lg"></i> Guardar</Button>
+          </Modal.Footer>
+        </Modal>
+        <IpRed />
+      </body>
+    );
+  }
+}
+
+export default mesas;

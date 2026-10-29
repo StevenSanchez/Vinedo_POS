@@ -1,0 +1,133 @@
+/*
+ * ============================================================================
+ * ARCHIVO: src/css/login.css
+ * PANTALLA: /login  (src/js/login.js)
+ * CONTENIDO: fondo y formulario de inicio de sesión centrado.
+ * ============================================================================
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Noto Serif";
+  background-color: #26408b;
+  text-align: center;
+}
+
+.login-page {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+#login-form {
+  width: 450px;
+  height: 500px;
+  border-radius: 10px;
+  position: relative;
+  background-color: rgba(255, 255, 255, 0.72);
+  margin: 0;
+}
+#titulo{
+  font-weight: 600;
+}
+
+.INLG {
+background-color: rgba(113, 207, 168, 0.199);
+color: #254bbd;
+font-size: 20px;
+font-weight: bold;
+}
+
+.login-form .logo {
+  position: relative;
+  top: 20%;
+  left: 50%;
+  margin-bottom: 15px;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+  height: 200px;
+  width: 200px;
+}
+
+#logo {
+  position: relative;
+  top: 50%;
+  left: 50%;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+  height: 250px;
+  width: 250px;
+}
+
+.login-form h1 {
+  font-family: "Noto Serif";
+  text-align: center;
+  color: #4a00b8;
+  font-size: 40px;
+  margin-top: -10px;
+}
+
+.login-form input[type="password"],
+.login-form input[type="text"] {
+  width: 85%;
+  padding: 10px;
+  border-width: 3px;
+  border-radius: 10px;
+  border-color: #3726cf9d;
+  font-size: 20px;
+  text-align: center;
+  margin-top: 4px;
+  font-family: "Noto Serif";
+  box-sizing: border-box;
+}
+
+#btn-login {
+  margin-top: 4%;
+  padding: 0.6rem 1rem;
+  border: 1px solid #26408b;
+  border-radius: 12px;
+  background-color: #383d49;
+  color: #fff;
+  font-family: "Noto Serif";
+  font-size: 1.5rem;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  background-image: linear-gradient(#526ec0 10%, #26408b 100%);
+}
+
+#btn-login:hover,
+#btn-login:focus {
+  background-image: linear-gradient(#26408b 10%, #526ec0 100%);
+}
+
+#btn-login:active {
+  border: none;
+  background-image: linear-gradient(#0f084b 10%, #415fbb 100%);
+}
+
+@media all and (max-width: 600px) {
+  #login-form {
+    width: min(380px, 92vw);
+    height: 480px;
+  }
+  #logo {
+    height: 210px;
+    width: 210px;
+  }
+  .login-form h1 {
+    font-size: 32px;
+  }
+}

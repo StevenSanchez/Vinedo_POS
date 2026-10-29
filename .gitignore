@@ -1,0 +1,35 @@
+# Dependencias de Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de entorno y configuración local
+.env
+.env.local
+.env.*.local
+
+# Builds de producción y carpetas de salida
+dist/
+build/
+.next/
+out/
+.DS_Store
+
+# 1. Ignorar todo en la raíz del proyecto por defecto
+/*
+
+# 2. Permitir explícitamente solo las carpetas y archivos que deseas mantener
+!/api/
+!/vinedopos/
+!/README.md
+!/.gitignore
+
+# 3. Ignorar siempre node_modules y builds dentro de las carpetas permitidas
+**/node_modules/
+**/build/
+**/dist/
+
+# 4. Ignorar archivos de entorno dentro de cualquier subcarpeta
+**/.env
+**/.env.*

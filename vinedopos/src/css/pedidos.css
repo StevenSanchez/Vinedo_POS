@@ -1,0 +1,1180 @@
+/*
+ * ============================================================================
+ * ARCHIVO: src/css/pedidos.css
+ * PANTALLA: /pedidos  (src/js/pedidos.js)
+ * CONTENIDO: tarjetas de producto, tabla de la cuenta, cargos compactos
+ * (checkboxes de 54 px), modal de cobro, botón flotante del carrito,
+ * acciones por línea (mover a otra cuenta / eliminar), estilos del ticket y
+ * ajustes responsive.
+ * ============================================================================
+ */
+
+/* Propiedades Body */
+body {
+  min-height: 100vh;
+  font-family: "Noto Serif";
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  margin: 0;
+  padding: 0;
+}
+
+.App-body {
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+#btNavbar {
+  background: none;
+  border: none;
+  color: white;
+  font-weight: 500;
+}
+
+/* Layout */
+.App-body > div:first-child {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.Tabla {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.TablaFactura {
+  width: 100%;
+  max-width: 1100px;
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.05);
+  padding: 18px 18px 22px 18px;
+  box-sizing: border-box;
+}
+
+.cliente {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cliente input {
+  border-radius: 10px;
+  border: 1px solid #d7dce5;
+  padding: 8px 10px;
+  width: min(320px, 70%);
+}
+
+.nombreC {
+  margin: 6px 0 14px 0;
+  color: #1f2937;
+  font-size: 1.1rem;
+}
+
+#tbF {
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: #1f2937;
+  color: #f8fafc;
+}
+
+#tbF thead th {
+  background-color: #111827;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+#tbF tbody td {
+  background-color: #1f2937;
+  border-color: rgba(255, 255, 255, 0.06);
+  vertical-align: middle;
+}
+
+#tbF .btn {
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.acciones-linea {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#tbF .btMoverLinea {
+  background: #0ea5e9;
+  border-color: #0284c7;
+  color: #fff;
+}
+
+#tbF .btMoverLinea:hover {
+  background: #0284c7;
+  border-color: #0369a1;
+}
+
+#tbF .btMoverLinea:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.duo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px 28px 16px;
+  box-sizing: border-box;
+}
+
+.Productos {
+  flex: 2 1 620px;
+}
+
+.Categorias {
+  flex: 1 1 260px;
+}
+
+.TablaProductos {
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  backdrop-filter: blur(2px);
+}
+
+.TablaCategoria {
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  backdrop-filter: blur(2px);
+}
+
+#btCategoria {
+  font-family: "Noto Serif";
+  font-size: 16px;
+  font-weight: 600;
+  width: 100%;
+  min-height: 68px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #1f2937;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+  transition: all 0.15s ease-in-out;
+}
+
+#btCategoria:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+#btCategoria:active {
+  transform: translateY(0);
+}
+
+.btCategoriaActive {
+  border-color: #2563eb !important;
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25) !important;
+}
+
+.btProductoCard {
+  font-family: "Noto Serif";
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  text-align: left;
+  width: 100%;
+  min-height: 88px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  color: #1f2937;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  transition: all 0.15s ease-in-out;
+}
+
+.btProductoCard:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.1);
+}
+
+.btProductoCard:active {
+  transform: translateY(0);
+}
+
+.btProductoNombre {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.btProductoPrecio {
+  font-size: 14px;
+  font-weight: 700;
+  color: #16a34a;
+}
+
+#btFactura1,
+#btFactura2,
+#btFacturaItems,
+#btFacturaDividir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-family: "Noto Serif";
+  padding: 0.7rem 1.4rem;
+  border-radius: 12px;
+  border: none;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 8px 10px 8px 0;
+  line-height: 1.2;
+}
+
+#btFacturaDividir {
+  background: linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%);
+}
+
+#btFacturaDividir:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+#btFactura1 {
+  background: linear-gradient(180deg, #38bdf8 0%, #2563eb 100%);
+}
+
+#btFactura2 {
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+}
+
+#btFacturaItems {
+  background: linear-gradient(180deg, #f59e0b 0%, #d97706 100%);
+}
+
+#lbTotal1 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+#lbTotal2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #111827;
+  float: right;
+}
+
+.Ticket {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .duo {
+    flex-direction: column;
+  }
+
+  .Productos,
+  .Categorias {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .Categorias .TablaCategoria {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .Categorias .TablaCategoria button {
+    flex: 1 1 160px;
+  }
+}
+
+/* Layout optimizado para 1024x768 - Cuenta a la izquierda, categorías arriba + productos a la derecha */
+@media (min-width: 1024px) {
+  .Tabla {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 12px 16px 10px 16px;
+  }
+
+  .TablaFactura {
+    max-width: 100%;
+    width: 100%;
+    padding: 14px 16px 16px 16px;
+  }
+
+  .duo {
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 0 16px 18px 16px;
+    display: grid;
+    grid-template-columns: minmax(580px, 3fr) minmax(420px, 2fr);
+    align-items: start;
+    gap: 14px;
+  }
+
+  .duo .Productos {
+    flex: none;
+    width: 100%;
+  }
+
+  .duo .Categorias {
+    flex: none;
+    width: 100%;
+  }
+
+  .duo .Categorias .TablaCategoria {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .duo .Categorias .TablaCategoria button {
+    flex: 1 1 calc(33% - 8px);
+    min-height: 56px;
+    font-size: 14px;
+  }
+
+  .duo .Productos .TablaProductos {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .btProductoCard {
+    min-height: 78px;
+    padding: 10px 12px;
+  }
+
+  .btProductoNombre {
+    font-size: 14px;
+  }
+
+  #btFactura1,
+  #btFactura2,
+  #btFacturaItems,
+  #btFacturaDividir {
+    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    margin: 6px 8px 6px 0;
+  }
+
+  #lbTotal2 {
+    font-size: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 800px) {
+  .Tabla {
+    padding: 8px 14px 6px 14px;
+  }
+
+  .duo {
+    padding: 0 14px 14px 14px;
+    gap: 12px;
+  }
+
+  .TablaFactura {
+    padding: 12px 14px 14px 14px;
+  }
+
+  .TablaProductos {
+    padding: 12px;
+    gap: 9px;
+  }
+
+  .TablaCategoria {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  #btCategoria {
+    min-height: 52px;
+    font-size: 13px;
+  }
+
+  .btProductoCard {
+    min-height: 72px;
+  }
+}
+
+.cart-fab {
+  display: none;
+}
+
+.cart-modal .modal-content {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.cart-modal .modal-header {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.cart-modal .modal-footer {
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  gap: 8px;
+}
+
+.pay-modal .modal-content {
+  border-radius: 18px;
+  border: none;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.25);
+}
+
+.pay-modal .modal-header {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.pay-modal .modal-footer {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .Tabla {
+    display: none;
+  }
+
+  .duo {
+    flex-direction: column;
+    padding: 10px 10px 110px 10px;
+    gap: 14px;
+  }
+
+  .Productos {
+    order: 2;
+  }
+
+  .Categorias {
+    order: 1;
+  }
+
+  .Productos .TablaProductos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+    gap: 10px;
+    background-color: rgba(255, 255, 255, 0.72);
+  }
+
+  .btProductoCard {
+    min-height: 92px;
+    padding: 12px;
+  }
+
+  .btProductoNombre {
+    font-size: 14px;
+  }
+
+  #btCategoria {
+    min-height: 76px;
+    font-size: 15px;
+    border-radius: 12px;
+    text-align: center;
+  }
+
+  .Categorias .TablaCategoria {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(2, 1fr);
+    grid-auto-columns: calc((100% - 10px) / 2);
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 12px;
+    scroll-snap-type: x mandatory;
+    align-items: stretch;
+    background-color: rgba(255, 255, 255, 0.72);
+  }
+
+  .Categorias .TablaCategoria button {
+    min-width: 0;
+    width: 100%;
+    height: 56px;
+    margin: 0;
+    scroll-snap-align: start;
+    font-size: 14px;
+  }
+
+  .navbar .container {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .cart-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%);
+    width: calc(100% - 20px);
+    max-width: 420px;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 18px;
+    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 14px 30px rgba(22, 163, 74, 0.28);
+    z-index: 1100;
+  }
+
+  .cart-fab:active {
+    transform: translateX(-50%) scale(0.98);
+  }
+}
+
+@media (max-width: 480px) {
+  .Productos .TablaProductos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  #btCategoria {
+    min-height: 68px;
+    font-size: 14px;
+  }
+
+  #tbF {
+    font-size: 0.85rem;
+  }
+
+  #tbF td,
+  #tbF th {
+    padding: 7px 5px;
+  }
+}
+
+/* Cargos por porcentaje (servicio, propina, etc.) */
+.cargos-cuenta {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #d1d5db;
+}
+
+.cargos-titulo {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+
+.cargo-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 3px 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  max-width: 340px;
+}
+
+.cargo-check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: #16a34a;
+  cursor: pointer;
+}
+
+.cargo-check .cargo-nombre {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.cargo-check .cargo-monto {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: #374151;
+}
+
+.cargo-check.activo .cargo-nombre {
+  font-weight: 600;
+}
+
+/* Cuentas de una misma mesa (Tramo 1) */
+.cuentas-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px dashed #d1d5db;
+}
+
+.cuentas-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cuentas-titulo {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.chip-cuenta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #d7dce5;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all 0.15s ease-in-out;
+}
+
+.chip-cuenta:hover {
+  border-color: #16a34a;
+  transform: translateY(-1px);
+}
+
+.chip-cuenta.activa {
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  border-color: #16a34a;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(22, 163, 74, 0.25);
+}
+
+.chip-total {
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-nueva {
+  border-style: dashed;
+  border-color: #16a34a;
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.chip-ver {
+  border: none;
+  background: none;
+  color: #2563eb;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 6px 4px;
+  text-decoration: underline;
+}
+
+.cuentas-acciones {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip-accion {
+  border: 1px solid #d7dce5;
+  background: #ffffff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.chip-accion:hover {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+.chip-accion.chip-peligro {
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.chip-accion.chip-peligro:hover {
+  background: #fef2f2;
+}
+
+.cuentas-modal .modal-content {
+  border-radius: 18px;
+  border: none;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.25);
+}
+
+.cuentas-tabla thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.cuenta-numero {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.cuenta-fila-activa td {
+  background-color: rgba(22, 163, 74, 0.08);
+}
+
+.cuentas-botones {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+  .cuentas-barra {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cuentas-acciones {
+    width: 100%;
+  }
+}
+
+/* Cobro por ítems (Tramo 2) */
+.items-modal .modal-content {
+  border-radius: 18px;
+  border: none;
+  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.25);
+}
+
+.items-modal .modal-header {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.items-modal .modal-footer {
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+  gap: 10px;
+}
+
+.items-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.items-etiqueta,
+.items-pago-titulo {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.items-pago-titulo {
+  margin-bottom: 8px;
+}
+
+.items-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.items-ayuda {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.items-tabla {
+  margin-bottom: 12px;
+}
+
+.items-tabla thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+
+.items-tabla .item-cantidad {
+  max-width: 88px;
+}
+
+.items-tabla .item-fila-activa td {
+  background-color: rgba(22, 163, 74, 0.08);
+}
+
+.items-resumen {
+  background: #f8fafc;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.items-resumen > div,
+.items-vuelto {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.items-resumen .items-total {
+  border-top: 1px dashed #cbd5e1;
+  margin-top: 6px;
+  padding-top: 6px;
+  font-size: 1.1rem;
+}
+
+.items-vuelto {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+@media (max-width: 576px) {
+  .items-cabecera {
+    align-items: stretch;
+  }
+
+  .items-cabecera > div {
+    flex: 1 1 45%;
+  }
+}
+
+/* División igualitaria (Tramo 3) */
+.chip-cuenta.dividida {
+  border-color: #f59e0b;
+}
+
+.chip-division {
+  background: #f59e0b;
+  color: #1f2937;
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.cuenta-division {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.division-panel {
+  border: 1px solid #f59e0b;
+  background: #fffbeb;
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.division-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #92400e;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.division-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.chip-parte {
+  min-width: 30px;
+  text-align: center;
+  border-radius: 999px;
+  border: 1px solid #fcd34d;
+  background: #fff;
+  color: #92400e;
+  padding: 3px 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.chip-parte.pagada {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+
+.chip-parte.actual {
+  background: #f59e0b;
+  border-color: #d97706;
+  color: #1f2937;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.division-resumen {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px dashed #fcd34d;
+  padding-top: 8px;
+}
+
+.division-resumen > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.division-resumen span {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #92400e;
+}
+
+.division-resumen strong {
+  font-size: 1rem;
+}
+
+.division-ayuda {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: #92400e;
+}
+
+@media (max-width: 576px) {
+  .division-resumen {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Layout optimizado para 1024x768 - Cuenta a la izquierda, categorías arriba + productos a la derecha */
+.PedidosLayout {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 1024px) {
+  .PedidosLayout {
+    display: grid;
+    grid-template-columns: minmax(580px, 3fr) minmax(420px, 2fr);
+    align-items: start;
+    gap: 14px;
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 10px 16px 18px 16px;
+    box-sizing: border-box;
+  }
+
+  .PedidosLayout .Tabla {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    justify-content: stretch;
+  }
+
+  .PedidosLayout .TablaFactura {
+    max-width: 100%;
+    width: 100%;
+    padding: 14px 16px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 140px);
+  }
+
+  .PedidosLayout .TablaFactura .factura-scroll-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .PedidosLayout .TablaFactura .factura-scroll-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+  }
+
+  .PedidosLayout .TablaFactura .factura-scroll-nav {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .PedidosLayout .TablaFactura .factura-scroll-btn {
+    border: 1px solid #d7dce5;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    color: #1f2937;
+    border-radius: 999px;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  }
+
+  .PedidosLayout .TablaFactura .factura-scroll-btn:hover {
+    border-color: #16a34a;
+    color: #16a34a;
+  }
+
+  .PedidosLayout .TablaFactura .cargos-cuenta {
+    flex: 0 0 auto;
+  }
+
+  .PedidosLayout .TablaFactura > div[style*="justify-content: space-between"] {
+    flex: 0 0 auto;
+  }
+
+  .PedidosLayout .TablaFactura > div[style*="flex-wrap: wrap"] {
+    flex: 0 0 auto;
+  }
+
+  .PedidosLayout .duo {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .PedidosLayout .duo .Productos {
+    flex: none;
+    width: 100%;
+  }
+
+  .PedidosLayout .duo .Categorias {
+    flex: none;
+    width: 100%;
+    order: -1;
+  }
+
+  .PedidosLayout .duo .Categorias .TablaCategoria {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .PedidosLayout .duo .Categorias .TablaCategoria button {
+    flex: 1 1 calc(33% - 8px);
+    min-height: 56px;
+    font-size: 14px;
+  }
+
+  .PedidosLayout .duo .Productos .TablaProductos {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .btProductoCard {
+    min-height: 78px;
+    padding: 10px 12px;
+  }
+
+  .btProductoNombre {
+    font-size: 14px;
+  }
+
+  #btFactura1,
+  #btFactura2,
+  #btFacturaItems,
+  #btFacturaDividir {
+    padding: 0.6rem 1.1rem;
+    font-size: 0.95rem;
+    margin: 6px 8px 6px 0;
+  }
+
+  #lbTotal2 {
+    font-size: 1.25rem;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 800px) {
+  .PedidosLayout {
+    padding: 8px 14px 14px 14px;
+    gap: 12px;
+  }
+
+  .PedidosLayout .TablaFactura {
+    padding: 12px 14px 14px 14px;
+  }
+
+  .PedidosLayout .duo {
+    gap: 10px;
+  }
+
+  .PedidosLayout .duo .Productos .TablaProductos {
+    padding: 12px;
+    gap: 9px;
+  }
+
+  .PedidosLayout .duo .Categorias .TablaCategoria {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  #btCategoria {
+    min-height: 52px;
+    font-size: 13px;
+  }
+
+  .btProductoCard {
+    min-height: 72px;
+  }
+}

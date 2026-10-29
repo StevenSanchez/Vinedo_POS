@@ -1,0 +1,396 @@
+/*
+ * ============================================================================
+ * ARCHIVO: src/css/crud.css
+ * PANTALLAS: CRUDs (categorías, productos, métodos de pago, cargos),
+ *            /facturas y /configuracionTicket.
+ * CONTENIDO: fondo, tablas, formularios, modales y editor/vista previa del
+ * ticket. Los estilos del ticket impreso van en el HTML generado por
+ * src/js/ticket.js, no aquí.
+ * ============================================================================
+ */
+body {
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+  font-family: "Noto Serif";
+  text-align: center;
+  color: #1f2937;
+  margin: 0;
+}
+
+.App-body {
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.crud-container {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 30px 16px;
+  box-sizing: border-box;
+}
+
+/* Propiedades Todo el Box */
+/* Asegura que la caja respete el ancho de pantalla */
+.TablaDatos {
+  color: black;
+  background-color: rgba(255, 255, 255, 0.72);
+  width: 100%;
+  max-width: 1100px; /* Ajustado para dar más espacio si la pantalla es grande */
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  padding: 30px 26px;
+  box-sizing: border-box;
+  margin: 0 auto;
+}
+
+/* Evita que los textos de la tabla rompan filas o se fuercen verticalmente */
+.TablaDatos table th,
+.TablaDatos table td {
+  white-space: nowrap;
+}
+
+/* Reducir padding interno en pantallas pequeñas */
+@media (max-width: 768px) {
+  .TablaDatos {
+    padding: 15px 10px;
+    border-radius: 8px;
+  }
+}
+
+.categoria {
+  max-height: 75px;
+  width: 250px;
+  margin-top: 15px;
+}
+
+.user {
+  max-height: 20px;
+  width: 150px;
+}
+
+.pass {
+  max-height: 20px;
+  width: 150px;
+}
+
+.name {
+  max-height: 20px;
+  width: 170px;
+}
+
+.price {
+  max-height: 20px;
+  width: 128px;
+}
+
+textarea {
+  resize: none;
+}
+
+.desc {
+  font-family: "Noto Serif";
+  font-size: small;
+  text-align: justify;
+  height: 40px;
+  max-height: 40px;
+  width: 170px;
+}
+
+h4 {
+  display: inline-block;
+  align-items: center;
+}
+
+.cbcategoria {
+  font-family: "Noto Serif";
+  margin-top: 15px;
+  padding: 1px 1rem;
+  font-size: 20px;
+  border: 1px solid #134881;
+  border-radius: 0.25rem;
+  color: #193a5e;
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out;
+}
+
+#confirmar {
+  font-family: "Noto Serif";
+  padding: 0.6rem 1.2rem;
+  border: 1px solid #1f2937;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+  color: #fff;
+  font-size: 1.1rem;
+  font-weight: 600;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 20px rgba(31, 41, 55, 0.16);
+}
+
+#confirmar:hover,
+#confirmar:focus {
+  background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
+  color: #fff;
+}
+
+#confirmar:active {
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
+}
+
+.crud-container .table {
+  margin-top: 20px;
+  background-color: #ffffff;
+}
+
+.crud-container .table thead th {
+  background-color: #1f2937;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.crud-container .table td,
+.crud-container .table th {
+  vertical-align: middle;
+}
+
+@media all and (max-width: 768px) {
+  .crud-container {
+    padding: 18px 12px;
+  }
+  .TablaDatos {
+    padding: 22px 16px;
+    border-radius: 12px;
+  }
+  #confirmar {
+    margin-top: 10px;
+    width: 100%;
+  }
+  .cbcategoria {
+    width: 100%;
+    font-size: 18px;
+  }
+  .categoria {
+    width: 100%;
+    max-width: 320px;
+  }
+}
+
+/* --- Distribución de Filtros y Buscador --- */
+
+/* En PC / Escritorio (Ancho > 768px) */
+.contenedor-filtros {
+  display: flex;
+  align-items: center;
+  margin-top: 15px;
+  position: relative;
+  width: 100%;
+}
+
+.grupo-botones {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  width: 100%; /* Mantiene los botones en el centro perfecto de la tarjeta */
+}
+
+.grupo-buscador {
+  position: absolute;
+  right: 0; /* Coloca el buscador a la derecha sin empujar los botones */
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* En Celular (Ancho <= 768px) */
+@media (max-width: 768px) {
+  .contenedor-filtros {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .grupo-botones {
+    justify-content: center;
+  }
+
+  .grupo-buscador {
+    position: static; /* Quita el posicionamiento absoluto en móvil */
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* --- Configuración del ticket (machote) --- */
+.ticket-config {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+  width: 100%;
+  max-width: 1150px;
+  margin: 0 auto;
+}
+
+.ticket-form {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px 24px 28px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+.ticket-form h2 {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.ticket-ayuda {
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+  margin-bottom: 18px;
+}
+
+.ticket-form h4 {
+  margin: 22px 0 10px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 1rem;
+  color: #7b1e3a;
+}
+
+.ticket-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 10px;
+  flex: 1;
+}
+
+.ticket-campo label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.ticket-campo input[type="text"],
+.ticket-campo input[type="number"],
+.ticket-campo select,
+.ticket-campo textarea {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.ticket-campo input:focus,
+.ticket-campo select:focus,
+.ticket-campo textarea:focus {
+  outline: none;
+  border-color: #7b1e3a;
+  box-shadow: 0 0 0 2px rgba(123, 30, 58, 0.15);
+}
+
+.ticket-fila {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ticket-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 6px 14px;
+}
+
+.ticket-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.86rem;
+  color: #374151;
+  cursor: pointer;
+  margin: 0;
+}
+
+.ticket-botones {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.ticket-preview-col {
+  background: #fff;
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  position: sticky;
+  top: 16px;
+}
+
+.ticket-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.ticket-preview-head h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #7b1e3a;
+}
+
+.ticket-tabs {
+  display: flex;
+  border: 1px solid #ced4da;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ticket-tabs button {
+  background: #fff;
+  border: 0;
+  padding: 4px 8px;
+  font-size: 0.75rem;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.ticket-tabs button.activo {
+  background: #7b1e3a;
+  color: #fff;
+}
+
+.ticket-preview {
+  width: 100%;
+  max-width: 302px;
+  height: 620px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  background: #f8f9fa;
+  display: block;
+  margin: 0 auto;
+}
+
+@media (max-width: 992px) {
+  .ticket-config {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-preview-col {
+    position: static;
+  }
+}

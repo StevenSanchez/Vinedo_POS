@@ -1,0 +1,115 @@
+/*
+ * ============================================================================
+ * ARCHIVO: src/css/inicio.css
+ * PANTALLA: /  (src/js/inicio.js)
+ * CONTENIDO: fondo, logo y tarjeta de bienvenida.
+ * NOTA: CRA inyecta los CSS globalmente; esta hoja redefine `body`.
+ * ============================================================================
+ */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: "Noto Serif";
+  margin: 0;
+  min-height: 100vh;
+  width: 100%;
+  color: white;
+  background-image: url("../images/IMG_3776.jpg");
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center center;
+}
+
+.inicio-page {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+#h1PI {
+  margin: 20px 0 20px 0;
+  text-shadow: 0 4px 20px rgba(83, 0, 0, 0.2);
+  color: rgb(39, 4, 167);
+  font-weight: 600;
+}
+
+#contenedor {
+  width: 450px;
+  height: 500px;
+  border-radius: 10px;
+  position: relative;
+  background-color: rgba(255, 255, 255, 0.72);
+}
+
+.logo {
+  position: relative;
+  top: 20%;
+  left: 50%;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+  height: 200px;
+  width: 200px;
+}
+#logo2 {
+  position: relative;
+  top: 50%;
+  left: 50%;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+  height: 250px;
+  width: 250px;
+}
+
+/*Estilos boton login y logout*/
+
+#a-login {
+  margin-top: 30px;
+  font-family: "Noto Serif";
+  padding: 0.6rem 1rem;
+  border: 1px solid #26408b;
+  border-radius: 4px;
+  background-color: #26408b;
+  color: #fff;
+  text-decoration: none;
+  font-size: 1.5rem;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset,
+    0 1px 3px rgba(0, 0, 0, 0.2);
+  background-image: linear-gradient(#526ec0 10%, #26408b 100%);
+}
+#a-login:hover,
+#a-login:focus {
+  background-image: linear-gradient(#26408b 10%, #526ec0 100%);
+}
+#a-login:active {
+  background-image: linear-gradient(#0f084b 10%, #415fbb 100%);
+}
+
+@media all and (max-width: 800px) {
+  body {
+    background-attachment: scroll;
+  }
+  .inicio-page {
+    padding: 16px;
+  }
+  #h1PI {
+    margin-top: -10px;
+  }
+  #contenedor {
+    width: min(380px, 90vw);
+    height: 460px;
+  }
+  #logo2 {
+    height: 210px;
+    width: 210px;
+  }
+}
