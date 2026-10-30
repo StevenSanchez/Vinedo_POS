@@ -486,19 +486,24 @@ body {
   }
 
   .Productos .TablaProductos {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(100px, 1fr));
     padding: 12px;
     gap: 10px;
     background-color: rgba(255, 255, 255, 0.72);
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .btProductoCard {
-    min-height: 30px;
-    padding: 12px;
+    min-height: 50px;
+    padding: 8px 6px;
+    font-size: 14px;
   }
 
   .btProductoNombre {
     font-size: 14px;
+    font-weight: 600;
   }
 
   #btCategoria {
@@ -564,8 +569,12 @@ body {
 
 @media (max-width: 480px) {
   .Productos .TablaProductos {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 9px;
+    grid-template-columns: repeat(2, minmax(100px, 1fr));
+    gap: 10px;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 10px;
   }
 
   #btCategoria {
@@ -580,6 +589,22 @@ body {
   #tbF td,
   #tbF th {
     padding: 7px 5px;
+  }
+
+  .btProductoCard {
+    min-height: 50px;
+    padding: 8px 6px;
+    font-size: 12px;
+  }
+
+  .btProductoNombre {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .btProductoPrecio {
+    font-size: 11px;
+    font-weight: 700;
   }
 }
 
@@ -1259,5 +1284,12 @@ body {
 
   .btProductoPrecio {
     font-size: 11px;
+  }
+}
+
+/* Botones un poco más altos en pantallas medianas (768px a 1024px) */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .PedidosLayout .duo .Productos .TablaProductos .btProductoCard {
+    min-height: 55px;
   }
 }
