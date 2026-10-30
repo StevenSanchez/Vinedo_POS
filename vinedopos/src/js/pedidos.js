@@ -2082,13 +2082,14 @@ class pedidos extends React.Component {
         <div className="PedidosLayout">
           <div className="Tabla">
             <div className="TablaFactura" style={{ overflowX: "auto" }}>
-              <div className="factura-scroll-wrap">
-                <div className="factura-scroll-body" ref={this.listaFacturaRef}>
+              
                   {this.renderCuentas()}
                   <div className="cliente">
                     <input type="text" placeholder="Nombre de la cuenta (opcional)" value={this.state.clienteInput} onChange={(e) => this.setState({ clienteInput: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") this.agregarNombreCliente() }} /><button className="btn-success btn-sm" onClick={() => this.agregarNombreCliente()}>Aceptar</button>
                   </div>
                   <h3 className="nombreC">{this.state.cliente ? "Cuenta: " + this.state.cliente : "Cuenta general"}</h3>
+                <div className="factura-scroll-wrap">
+                <div className="factura-scroll-body" ref={this.listaFacturaRef}>
                   <Table responsive className="table-sm" id="tbF">
                     <thead>
                       <tr>
