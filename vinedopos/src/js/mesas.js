@@ -14,15 +14,17 @@
  *   - Refresco al recuperar foco de la ventana y al volver a la pestaña.
  *   - Limpia intervalo y listeners en componentWillUnmount.
  *
+ * SISTEMA DE REORDENAMIENTO: DRAG & DROP
+ *   - Arrastrar y soltar filas para reordenar las mesas.
+ *   - El orden se guarda automáticamente al soltar.
+ *
  * ACCIONES:
  *   - Clic en mesa: guarda el objeto de la mesa en la cookie `MesaID`
  *     (MesaID, Nombre, FacturaID de referencia, cuentas, estado...) y navega
  *     a /pedidos. Pedidos vuelve a consultar las cuentas reales al abrir.
+ *   - Arrastrar y soltar: reordenar mesas.
  *   - Agregar mesa: POST /mesas/add/
  *   - Eliminar mesa: POST /mesas/delete/ (bloqueado si hay cuentas abiertas)
- *
- * CUIDADO: no asumir una sola factura por mesa. La mesa sigue ocupada
- * mientras tenga al menos una cuenta abierta. Ver consulta 13.1.
  * ============================================================================
  */
 import React from "react";
@@ -36,16 +38,18 @@ import { Navbar, Nav, Container, NavDropdown, Modal, Button, Form } from 'react-
 import { ruta } from "../Ruta/ruta"
 import DropdownItem from "react-bootstrap/esm/DropdownItem";
 import Swal from "sweetalert2";
-import logo from "../images/logo.png"; // Ajusta los '..' según la ubicación de tu componente
+import logo from "../images/logo.png";
 const baseUrl = ruta.baseUrl;
 const cookies = new Cookies();
+
 class mesas extends React.Component {
   state = {
     mesasDB: [],
     mesasOcupadas: [],
     nombreMN: '',
     modalInsert: false,
-    modoOrdenar: false
+    dragIndex: null,
+    dragOverIndex: null
   }
 
   setearVacio() {
@@ -53,21 +57,25 @@ class mesas extends React.Component {
       mesasDB: [],
       mesasOcupadas: [],
       nombreMN: '',
-      modalInsert: false
+      modalInsert: false,
+      dragIndex: null,
+      dragOverIndex: null
     })
   }
+
   cerrarSesion = () => {
     this.setearVacio()
     cookies.remove('idUsuario', { path: "/" })
     cookies.remove('usuario', { path: "/" })
     window.location.href = "/login"
   }
+
   refrescarmesas = async () => {
     const mesasTemp = await axios.get(baseUrl + "mesas/")
     const facturasTemp = await axios.get(baseUrl + "mesas/use/")
     const mesas = mesasTemp.data
     const facturasEnUso = facturasTemp.data || []
-    // Una mesa puede tener varias facturas abiertas (una por cuenta)
+    
     const cuentasPorMesa = {}
     for (let j = 0; j < facturasEnUso.length; j++) {
       const factura = facturasEnUso[j]
@@ -77,6 +85,7 @@ class mesas extends React.Component {
       }
       cuentasPorMesa[factura.MesaID].push(factura)
     }
+    
     var lista = []
     for (let i = 0; i < mesas.length; i++) {
       const cuentas = cuentasPorMesa[mesas[i].MesaID] || []
@@ -89,12 +98,15 @@ class mesas extends React.Component {
         Fecha: primera ? primera.Fecha : null,
         estado: primera ? primera.estado : null,
         cuentas: cuentas.length,
-        botonID: cuentas.length > 0 ? "btMesaUse" : "btMesa"
+        botonID: cuentas.length > 0 ? "btMesaUse" : "btMesa",
+        orden: mesas[i].orden || i + 1
       }
       lista.push(mesaTemp)
     }
+    
     this.setState({ mesasDB: lista })
   }
+
   componentDidMount() {
     if (!cookies.get('idUsuario')) {
       window.location.href = "/login"
@@ -134,48 +146,34 @@ class mesas extends React.Component {
     this.setearVacio()
     window.location.href = "/pedidos"
   }
+
   mostrarModal() {
     this.setState({ modalInsert: true })
   }
+
   handleChange = e => {
     this.setState({
       ...this.state,
       [e.target.name]: e.target.value
     })
-
   }
+
   ocultarModal() {
     this.setState({ modalInsert: false, nombreMN: '' })
   }
+
   insertarMesa = async () => {
     const newMesa = { mesa: this.state.nombreMN }
     await axios.post(baseUrl + "mesas/add/", newMesa)
       .then((res) => {
-        Swal.fire(res.data,"","info")
+        Swal.fire(res.data, "", "info")
       })
-    this.setState({ modalInsert: false })
+    this.setState({ modalInsert: false, nombreMN: '' })
     this.refrescarmesas()
   }
 
-  toggleOrdenar = () => {
-    const nuevoModo = !this.state.modoOrdenar
-    this.setState({ modoOrdenar: nuevoModo }, () => {
-      if (!nuevoModo) this.guardarOrden()
-    })
-  }
-
-  moverMesa = (index, direccion) => {
-    const mesasDB = [...this.state.mesasDB]
-    const nuevoIndex = index + direccion
-    if (nuevoIndex < 0 || nuevoIndex >= mesasDB.length) return
-    const temp = mesasDB[index]
-    mesasDB[index] = mesasDB[nuevoIndex]
-    mesasDB[nuevoIndex] = temp
-    this.setState({ mesasDB }, () => this.guardarOrden())
-  }
-
-  guardarOrden = async () => {
-    const ordenes = (this.state.mesasDB || []).map((mesa, index) => ({
+  guardarOrden = async (mesasOrdenadas) => {
+    const ordenes = (mesasOrdenadas || this.state.mesasDB || []).map((mesa, index) => ({
       MesaID: mesa.MesaID,
       orden: index + 1
     }))
@@ -185,6 +183,44 @@ class mesas extends React.Component {
       // Ignorar errores para no interrumpir el uso
     }
   }
+
+  onDragStart = (e, index) => {
+    this.setState({ dragIndex: index })
+    e.dataTransfer.effectAllowed = "move"
+  }
+
+  onDragOver = (e, index) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = "move"
+    if (this.state.dragIndex === index) return
+    this.setState({ dragOverIndex: index })
+  }
+
+  onDragLeave = () => {
+    this.setState({ dragOverIndex: null })
+  }
+
+  onDrop = (e, dropIndex) => {
+    e.preventDefault()
+    const { dragIndex, mesasDB } = this.state
+    if (dragIndex === null || dragIndex === dropIndex) {
+      this.setState({ dragIndex: null, dragOverIndex: null })
+      return
+    }
+    
+    const mesasReordenadas = [...mesasDB]
+    const [movedMesa] = mesasReordenadas.splice(dragIndex, 1)
+    mesasReordenadas.splice(dropIndex, 0, movedMesa)
+    
+    this.setState({ mesasDB: mesasReordenadas, dragIndex: null, dragOverIndex: null }, () => {
+      this.guardarOrden(mesasReordenadas)
+    })
+  }
+
+  onDragEnd = () => {
+    this.setState({ dragIndex: null, dragOverIndex: null })
+  }
+
   eliminarmesa = async (mesa) => {
     if (Number(mesa.cuentas || 0) > 0) {
       Swal.fire(
@@ -217,6 +253,7 @@ class mesas extends React.Component {
       Swal.fire("No se eliminó la mesa", mensaje, "warning")
     }
   }
+
   render() {
     return (
       <body className="App-body">
@@ -242,9 +279,6 @@ class mesas extends React.Component {
                   <Nav.Link>
                     <button id="btNavbar" onClick={() => this.mostrarModal()}>Agregar Mesa</button>
                   </Nav.Link>
-                  <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.toggleOrdenar()}>{this.state.modoOrdenar ? "Guardar orden" : "Ordenar mesas"}</button>
-                  </Nav.Link>
                   <NavDropdown title="Eliminar mesa">
                     {this.state.mesasDB.map((mesa, index) => (
                       <DropdownItem key={index} onClick={() => this.eliminarmesa(mesa)}>{mesa.Nombre}</DropdownItem>
@@ -263,36 +297,34 @@ class mesas extends React.Component {
         <div className="TablaMesas">
           <table id="tbMesas">
             {this.state.mesasDB.map((mesa, index) => (
-              <div key={mesa.MesaID} style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                {this.state.modoOrdenar && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-light"
-                      style={{ padding: '0 6px', lineHeight: 1 }}
-                      onClick={() => this.moverMesa(index, -1)}
-                      disabled={index === 0}
-                      title="Subir"
-                    >
-                      <i className="bi bi-chevron-up"></i>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-light"
-                      style={{ padding: '0 6px', lineHeight: 1 }}
-                      onClick={() => this.moverMesa(index, 1)}
-                      disabled={index === this.state.mesasDB.length - 1}
-                      title="Bajar"
-                    >
-                      <i className="bi bi-chevron-down"></i>
-                    </button>
-                  </div>
-                )}
+              <div
+                key={mesa.MesaID}
+                draggable
+                onDragStart={(e) => this.onDragStart(e, index)}
+                onDragOver={(e) => this.onDragOver(e, index)}
+                onDragLeave={this.onDragLeave}
+                onDrop={(e) => this.onDrop(e, index)}
+                onDragEnd={this.onDragEnd}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  minWidth: 0,
+                  cursor: this.state.dragIndex === index ? 'grabbing' : 'grab',
+                  opacity: this.state.dragIndex === index ? 0.5 : 1,
+                  border: this.state.dragOverIndex === index && this.state.dragIndex !== index ? '2px dashed #198754' : '2px solid transparent',
+                  borderRadius: '12px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
                 <button
                   id={mesa.botonID}
-                  style={this.state.modoOrdenar ? { cursor: 'default', flex: 1, minWidth: 0 } : { flex: 1, minWidth: 0 }}
-                  onClick={() => { if (!this.state.modoOrdenar) this.redirectPage(mesa) }}
-                  title={this.state.modoOrdenar ? mesa.Nombre + " · use las flechas para reordenar" : (mesa.cuentas > 0 ? mesa.Nombre + " · " + mesa.cuentas + " cuenta(s)" : mesa.Nombre)}
+                  style={{ flex: 1, minWidth: 0 }}
+                  onClick={() => {
+                    if (this.state.dragIndex === null) {
+                      this.redirectPage(mesa)
+                    }
+                  }}
+                  title={mesa.cuentas > 0 ? mesa.Nombre + " · " + mesa.cuentas + " cuenta(s)" : mesa.Nombre}
                 >
                   {mesa.Nombre}
                   {mesa.cuentas > 1 && (
@@ -310,7 +342,7 @@ class mesas extends React.Component {
           <Modal.Body>
             <Form.Group>
               <Form.Label className="mesa-label">Nombre de la mesa</Form.Label>
-              <Form.Control name="nombreMN" type="text" placeholder="Ej. Mesa 10" onChange={this.handleChange} autoFocus />
+              <Form.Control name="nombreMN" type="text" placeholder="Ej. Mesa 10" value={this.state.nombreMN || ''} onChange={this.handleChange} autoFocus />
             </Form.Group>
           </Modal.Body>
           <Modal.Footer>
