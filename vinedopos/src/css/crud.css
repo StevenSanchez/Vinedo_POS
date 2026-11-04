@@ -248,6 +248,7 @@ h4 {
 .ticket-form h2 {
   text-align: center;
   margin-bottom: 6px;
+  color: #5b1528;
 }
 
 .ticket-ayuda {
@@ -392,5 +393,367 @@ h4 {
 
   .ticket-preview-col {
     position: static;
+  }
+}
+
+/* ---- Guarniciones y términos (modificadores) ---- */
+.mod-encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.mod-encabezado h2 {
+  margin: 0 0 4px 0;
+}
+
+.mod-ayuda {
+  margin: 0;
+  color: #6b7280;
+  max-width: 720px;
+}
+
+.mod-card {
+  margin-bottom: 18px;
+}
+
+.mod-card-cabecera {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.mod-nombre {
+  flex: 1;
+  font-size: 1.05rem;
+  font-weight: 600;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.mod-opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 20px;
+  align-items: flex-end;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.mod-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.mod-campo select,
+.mod-campo input {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  min-width: 120px;
+}
+
+.mod-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.mod-etiqueta {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.mod-categorias {
+  margin-bottom: 12px;
+}
+
+.mod-categorias-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.mod-cat-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.9rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.mod-items {
+  margin-bottom: 12px;
+}
+
+.mod-tabla input {
+  min-width: 80px;
+}
+
+.mod-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mod-nota {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.mod-importar {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.mod-importar-fila {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mod-importar-fila select {
+  padding: 5px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  min-width: 180px;
+}
+
+/* ---- Estructura com�n de pantallas de configuraci�n ---- */
+.config-shell {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 28px 16px 46px;
+  box-sizing: border-box;
+}
+
+.config-panel {
+  width: 100%;
+  max-width: 1080px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+  padding: 26px 28px 30px;
+  box-sizing: border-box;
+  text-align: left;
+  color: #1f2937;
+}
+
+.config-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ece7e9;
+}
+
+.config-header h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #5b1528;
+  letter-spacing: -0.01em;
+}
+
+.config-sub {
+  margin: 6px 0 0;
+  color: #4b5563;
+  font-size: 0.93rem;
+  line-height: 1.45;
+  max-width: 700px;
+}
+
+.config-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.config-section {
+  background: #fff;
+  border: 1px solid #e8e3e5;
+  border-radius: 14px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.config-section-title {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #5b1528;
+}
+
+.config-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.config-badge {
+  display: inline-flex;
+  align-items: center;
+  background: #f5e9ed;
+  color: #7b1e3a;
+  border: 1px solid #e7c9d2;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.config-subtitle {
+  margin: 16px 0 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #8a6b74;
+}
+
+/* ---- Categor�as de cocina ---- */
+.categoria-cocina-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.cat-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+  margin: 0;
+  font-size: 0.9rem;
+  color: #374151;
+  transition: all 0.15s ease;
+}
+
+.cat-toggle:hover {
+  border-color: #c9a7b2;
+  background: #fdf7f9;
+}
+
+.cat-toggle.activa {
+  border-color: #7b1e3a;
+  background: #fdf2f5;
+  box-shadow: 0 0 0 2px rgba(123, 30, 58, 0.08);
+  font-weight: 600;
+}
+
+.cat-toggle input {
+  margin: 0;
+  accent-color: #7b1e3a;
+}
+
+/* ---- Ajustes visuales de modificadores ---- */
+.mod-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-panel .mod-card {
+  margin-bottom: 0;
+  border: 1px solid #e8e3e5;
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
+}
+
+.config-panel .mod-card .card-body {
+  padding: 18px 20px;
+}
+
+.config-panel .mod-nombre {
+  background: #fff;
+  border-color: #e3d6da;
+  color: #3f111d;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.config-panel .mod-opciones {
+  background: #faf7f8;
+  border-color: #eee4e7;
+  border-radius: 10px;
+}
+
+.config-panel .mod-etiqueta {
+  color: #8a5b6a;
+}
+
+.config-panel .mod-tabla thead th {
+  background: #f7f3f4;
+  color: #5b1528;
+  border-bottom: 1px solid #e8e3e5;
+}
+
+.config-panel .mod-tabla td {
+  vertical-align: middle;
+}
+
+.config-panel .mod-acciones {
+  padding-top: 4px;
+}
+
+@media (max-width: 640px) {
+  .config-shell {
+    padding: 16px 10px 32px;
+  }
+
+  .config-panel {
+    padding: 18px 14px 22px;
+    border-radius: 14px;
+  }
+
+  .config-header h2 {
+    font-size: 1.4rem;
+  }
+
+  .config-section {
+    padding: 14px 14px;
+  }
+
+  .categoria-cocina-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }

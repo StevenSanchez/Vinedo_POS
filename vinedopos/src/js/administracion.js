@@ -58,17 +58,17 @@ class crudProducto extends React.Component {
               <Navbar.Collapse id="responsive-navbar-nav">
                 <Nav className="me-auto">
                   <Nav.Link href="/mesas">
-                    <button id="btNavbar">Mesas</button>
+                    <button className="btnNavbar">Mesas</button>
                   </Nav.Link>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={this.irACierre}>
+                    <button className="btnNavbar" onClick={this.irACierre}>
                       Cierre de caja
                     </button>
                   </Nav.Link>
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>
+                    <button className="btnNavbar" onClick={() => this.cerrarSesion()}>
                       Cerrar sesión
                     </button>
                   </Nav.Link>
@@ -80,25 +80,35 @@ class crudProducto extends React.Component {
 
         <div className="admin-container">
           <div className="TablaBotones">
-            <a href="/crudCategoria" className="btn" id="btAdmins">
+            <div className="admin-menu-head">
+              <h2>Administración</h2>
+              <p>Catálogo, cobros, impresión y cierres del punto de venta.</p>
+            </div>
+            <a href="/crudCategoria" className="btn btAdmins">
               Categorías
             </a>
-            <a href="/crudProducto" className="btn" id="btAdmins">
+            <a href="/crudProducto" className="btn btAdmins">
               Productos
             </a>
-            <a href="/metodosPago" className="btn" id="btAdmins">
+            <a href="/metodosPago" className="btn btAdmins">
               Métodos de pago
             </a>
-            <a href="/cargos" className="btn" id="btAdmins">
+            <a href="/cargos" className="btn btAdmins">
               Cargos / Servicio
             </a>
-            <a href="/facturas" className="btn" id="btAdmins">
+            <a href="/facturas" className="btn btAdmins">
               Facturas
             </a>
-            <a href="/configuracionTicket" className="btn" id="btAdmins">
+            <a href="/configuracionTicket" className="btn btAdmins">
               Ticket / Factura
             </a>
-            <a href="/cierre" className="btn" id="btAdmins">
+            <a href="/configuracionComanda" className="btn btAdmins">
+              Comanda de Cocina
+            </a>
+            <a href="/configuracionModificadores" className="btn btAdmins">
+              Guarniciones y Términos
+            </a>
+            <a href="/cierre" className="btn btAdmins">
               Cierre de caja
             </a>
           </div>

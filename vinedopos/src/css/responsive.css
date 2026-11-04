@@ -1,0 +1,742 @@
+﻿/* ============================================================================
+ * ARCHIVO: src/css/responsive.css
+ * PROPÓSITO: ajustes globales de responsive y accesibilidad.
+ *
+ * Se importa al final (después de App) para afinar sobre los estilos de cada
+ * pantalla sin duplicar reglas. Cubre:
+ *  - Evitar desbordes horizontales y zooms automáticos en móvil.
+ *  - Áreas táctiles mínimas y foco visible.
+ *  - Modales que siempre caben en pantalla (portrait y landscape).
+ *  - Login / inicio en pantallas bajas.
+ *  - Pedidos: paneles con scroll propio y tabla de cuenta adaptable.
+ *  - Tablas de CRUD con scroll horizontal controlado.
+ * ============================================================================ */
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+button,
+[role="button"],
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+/* iOS hace zoom al enfocar campos con fuente menor a 16px. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
+/* Área táctil mínima en pantallas táctiles. */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 40px;
+  }
+
+  .btn-sm {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  .btnNavbar {
+    min-height: 42px;
+    padding: 6px 10px;
+  }
+}
+
+/* ---- Navbar ---- */
+.navbar {
+  min-height: 56px;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.navbar-brand img {
+  max-height: 35px;
+  width: auto;
+}
+
+@media (max-width: 360px) {
+  .navbar-brand span {
+    display: none;
+  }
+}
+
+/* ---- Modales ---- */
+.modal-dialog {
+  max-width: calc(100vw - 20px);
+}
+
+.modal-content {
+  max-height: calc(100vh - 20px);
+  max-height: calc(100dvh - 20px);
+}
+
+.modal-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (max-height: 560px) {
+  .modal-dialog {
+    margin: 6px auto;
+  }
+
+  .modal-body {
+    max-height: 58vh;
+    max-height: 58dvh;
+  }
+
+  .modal-header,
+  .modal-footer {
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 576px) {
+  .modal-dialog {
+    margin: 8px auto;
+  }
+
+  .modal-header,
+  .modal-footer {
+    padding: 10px 12px;
+  }
+
+  .modal-footer {
+    flex-wrap: wrap;
+    justify-content: stretch;
+    gap: 8px;
+  }
+
+  .modal-footer > * {
+    flex: 1 1 auto;
+    margin: 0 !important;
+  }
+}
+
+/* ---- Login e inicio ---- */
+.login-page,
+.inicio-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.login-page,
+.inicio-page {
+  overflow-y: auto;
+}
+
+#login-form {
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+}
+
+#contenedor {
+  max-width: calc(100vw - 32px);
+}
+
+@media (max-height: 640px) {
+  #login-form {
+    height: auto;
+    min-height: 340px;
+    padding-bottom: 18px;
+  }
+
+  .login-form .logo {
+    top: 0;
+    left: 0;
+    transform: none;
+    margin: 8px auto 0;
+    height: 110px;
+    width: 110px;
+  }
+
+  #logo {
+    position: static;
+    transform: none;
+    display: block;
+    margin: 0 auto;
+    height: 110px;
+    width: 110px;
+  }
+
+  .login-form h1 {
+    font-size: 26px;
+    margin: 4px 0 8px;
+  }
+
+  .login-form .INLG {
+    font-size: 16px;
+    padding: 8px;
+  }
+
+  #btn-login {
+    font-size: 1.1rem;
+    margin-top: 10px;
+  }
+
+  #contenedor {
+    height: auto;
+    min-height: 320px;
+    padding: 16px 12px 22px;
+  }
+
+  #h1PI {
+    font-size: 1.5rem;
+    margin: 6px 0 10px;
+  }
+
+  #contenedor .logo {
+    top: 0;
+    left: 0;
+    transform: none;
+    margin: 6px auto 0;
+  }
+
+  #logo2,
+  .logo {
+    height: 120px;
+    width: 120px;
+  }
+
+  #logo2 {
+    position: static;
+    transform: none;
+    display: block;
+    margin: 0 auto;
+  }
+
+  #a-login {
+    font-size: 1.1rem;
+    margin-top: 14px;
+    display: inline-block;
+  }
+}
+
+/* ---- Pedidos ---- */
+.TablaProductos {
+  height: clamp(280px, 52vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@media (min-width: 769px) {
+  .TablaCategoria {
+    max-height: clamp(280px, 52vh, 460px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+.tabla-factura {
+  min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .duo {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+.cart-fab {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 768px) {
+  .cart-fab {
+    bottom: calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .tabla-factura {
+    font-size: 0.8rem;
+  }
+
+  .tabla-factura .acciones-linea {
+    gap: 4px;
+  }
+
+  .tabla-factura .acciones-linea .btn {
+    padding: 4px 7px;
+  }
+}
+
+@media (max-width: 420px) {
+  .tabla-factura {
+    font-size: 0.75rem;
+  }
+
+  .tabla-factura th,
+  .tabla-factura td {
+    padding: 6px 4px;
+  }
+}
+
+/* En el modal del pedido la tabla puede desplazarse horizontalmente. */
+.cart-modal .modal-body {
+  overflow-x: auto;
+}
+
+@media (max-width: 560px) {
+  .cart-modal .tabla-factura {
+    min-width: 480px;
+  }
+}
+
+/* Móvil en horizontal: más contenido y menos aire vertical. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .TablaProductos {
+    height: 62vh;
+  }
+
+  .cart-fab {
+    bottom: 8px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+  }
+
+  .config-shell,
+  .crud-container,
+  .admin-container {
+    padding-top: 12px;
+    padding-bottom: 16px;
+  }
+
+  .config-header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+}
+
+/* ---- Tablas de CRUD ---- */
+.TablaDatos {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .TablaDatos {
+    padding: 16px 12px;
+  }
+
+  .TablaDatos table {
+    min-width: 520px;
+  }
+}
+
+.modal-body .table {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .modal-body .table-responsive {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ---- Formularios ---- */
+@media (max-width: 480px) {
+  .crud-container {
+    padding: 18px 10px;
+  }
+
+  .ticket-fila {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .ticket-campo {
+    width: 100%;
+  }
+
+  .ticket-checks {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* ---- Accesibilidad: usuarios con movimiento reducido ---- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Mesas en tel�fonos en horizontal ---- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .TablaMesas {
+    padding: 10px;
+  }
+
+  #tbMesas {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .btMesa,
+  .btMesaUse {
+    height: 58px;
+    font-size: 14px;
+  }
+}
+
+/* ---- Pedidos en tel�fonos en horizontal ---- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .Tabla {
+    display: none;
+  }
+
+  .duo {
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 92px;
+  }
+
+  .cart-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    position: fixed;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    width: calc(100% - 20px);
+    max-width: 420px;
+    border: none;
+    border-radius: 999px;
+    padding: 8px 14px;
+    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    box-shadow: 0 14px 30px rgba(22, 163, 74, 0.28);
+    z-index: 1100;
+  }
+}
+
+/* ---- Fondo en m�vil: evita el efecto "fixed" que salta al hacer scroll ---- */
+@media (max-width: 900px) {
+  body,
+  .App-body {
+    background-attachment: scroll;
+  }
+}
+
+.App-body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ---- Tablas dentro de modales y de configuraci�n ---- */
+.modal-body {
+  overflow-x: auto;
+}
+
+@media (max-width: 640px) {
+  .mod-items {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mod-tabla {
+    min-width: 460px;
+  }
+
+  .mod-tabla input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .ticket-preview {
+    height: 520px;
+  }
+}
+
+/* ---- Layout de pedidos en escritorio: columnas flexibles ---- */
+@media (min-width: 1024px) {
+  .PedidosLayout {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .PedidosLayout .duo {
+    flex-wrap: nowrap;
+  }
+}
+
+/* ---- Avisos de IP/QR: no estorban en pantallas peque�as ---- */
+.ip-red-qr,
+.ip-red-info {
+  bottom: calc(6px + env(safe-area-inset-bottom)) !important;
+}
+
+@media (max-width: 900px) {
+  .ip-red-info {
+    max-width: calc(100vw - 150px);
+  }
+
+  .ip-red-info > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 768px) {
+  .ip-red-qr,
+  .ip-red-info {
+    display: none !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .Categorias .TablaCategoria {
+    max-height: 92px;
+  }
+
+  .Categorias .TablaCategoria button {
+    min-height: 38px;
+    height: 38px;
+    font-size: 12px;
+  }
+
+  .Productos .TablaProductos {
+    height: calc(100vh - 238px);
+    height: calc(100dvh - 238px);
+    max-height: calc(100vh - 238px);
+    max-height: calc(100dvh - 238px);
+  }
+}
+
+@media (max-width: 800px) {
+  #contenedor {
+    padding-top: 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .cart-fab {
+    font-size: 0.85rem;
+    gap: 6px;
+    padding: 10px 12px;
+  }
+
+  .cart-fab span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* El bot�n flotante del pedido no debe quedar sobre un modal abierto. */
+body.modal-open .cart-fab {
+  display: none !important;
+}
+
+/* Scroll suave en contenedores t�ctiles. */
+.TablaProductos,
+.TablaCategoria,
+.TablaDatos,
+.cierre-tabla-scroll,
+.mod-items,
+.cart-modal .modal-body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Campos de texto largos (direcci�n, leyendas) visibles en m�vil. */
+.ticket-form textarea,
+.ticket-campo textarea {
+  min-height: 84px;
+}
+
+/* ---- Fondo estable en m�vil: evita franjas blancas al hacer scroll ---- */
+html,
+body {
+  height: auto;
+  min-height: 100%;
+}
+
+html {
+  background-color: #241417;
+}
+
+.App-body {
+  background-color: #241417;
+}
+
+/* ---- Productos y categor�as en m�vil ----
+   auto-fill evita que 2 o 3 productos se estiren a lo ancho.
+   En tel�fonos anchos (S25 Ultra, Pixel, iPhone Pro Max) entran 3 columnas. */
+@media (max-width: 768px) {
+  .Productos .TablaProductos {
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 8px;
+    padding: 10px;
+    height: auto;
+    max-height: calc(100vh - 210px);
+    max-height: calc(100dvh - 210px);
+    align-content: start;
+    align-items: start;
+    grid-auto-rows: min-content;
+  }
+
+  .btProductoCard {
+    min-height: 44px;
+    height: auto;
+    align-self: start;
+    padding: 6px 8px;
+  }
+
+  .btProductoNombre {
+    font-size: 13px;
+    line-height: 1.15;
+  }
+
+  .btProductoPrecio {
+    font-size: 12px;
+  }
+
+  .Categorias .TablaCategoria button {
+    height: 48px;
+    min-height: 48px;
+    font-size: 13px;
+  }
+}
+
+@media (min-width: 390px) and (max-width: 768px) {
+  .Categorias .TablaCategoria {
+    grid-auto-columns: calc((100% - 20px) / 3);
+  }
+}
+
+@media (min-width: 560px) and (max-width: 768px) {
+  .Categorias .TablaCategoria {
+    grid-auto-columns: calc((100% - 30px) / 4);
+  }
+}
+
+/* ============================================================================
+   Categorías en 3 filas con desplazamiento horizontal y flechas.
+   Se aplica en TODOS los tamaños para que el comportamiento sea consistente.
+   ============================================================================ */
+.PedidosLayout .duo .Categorias {
+  position: relative;
+}
+
+.PedidosLayout .duo .Categorias .TablaCategoria {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-template-rows: repeat(3, 34px) !important;
+  grid-auto-columns: 90px !important;
+  gap: 5px !important;
+  padding: 6px 24px 6px 24px !important;
+  max-height: none !important;
+  height: auto !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.PedidosLayout .duo .Categorias .TablaCategoria::-webkit-scrollbar {
+  display: none;
+}
+
+.PedidosLayout .duo .Categorias .TablaCategoria button {
+  width: 90px !important;
+  min-width: 0 !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  padding: 3px 5px !important;
+  font-size: 12px !important;
+  line-height: 1.1 !important;
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+}
+
+.PedidosLayout .duo .Categorias .cat-flecha {
+  display: flex !important;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 22px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #d7dce5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #5b1528;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+}
+
+.PedidosLayout .duo .Categorias .cat-flecha-izq {
+  left: 0;
+}
+
+.PedidosLayout .duo .Categorias .cat-flecha-der {
+  right: 0;
+}
+
+.PedidosLayout .duo .Categorias .cat-flecha.oculta {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 600px) {
+  .PedidosLayout .duo .Categorias .TablaCategoria {
+    grid-auto-columns: 82px !important;
+    padding-left: 22px !important;
+    padding-right: 22px !important;
+  }
+
+  .PedidosLayout .duo .Categorias .TablaCategoria button {
+    width: 82px !important;
+    font-size: 12px !important;
+  }
+}

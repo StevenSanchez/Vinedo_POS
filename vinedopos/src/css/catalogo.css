@@ -1,0 +1,231 @@
+/* ============================================================================
+ * ARCHIVO: src/css/catalogo.css
+ * PANTALLAS: /crudCategoria, /crudProducto
+ * Estilos de las tarjetas de catálogo, barra de búsqueda y formularios.
+ * ============================================================================ */
+
+.catalog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.catalog-search {
+  position: relative;
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.catalog-search input {
+  width: 100%;
+  padding: 9px 12px 9px 34px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: #1f2937;
+  background: #fff;
+}
+
+.catalog-search input:focus {
+  outline: none;
+  border-color: #7b1e3a;
+  box-shadow: 0 0 0 2px rgba(123, 30, 58, 0.15);
+}
+
+.catalog-search i {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.catalog-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 190px;
+}
+
+.catalog-filter label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a6b74;
+  margin: 0;
+}
+
+.catalog-filter select {
+  padding: 9px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  background: #fff;
+  color: #1f2937;
+}
+
+.catalog-filter select:focus {
+  outline: none;
+  border-color: #7b1e3a;
+  box-shadow: 0 0 0 2px rgba(123, 30, 58, 0.15);
+}
+
+.catalog-count {
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #e8e3e5;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.catalog-card-head {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.catalog-card h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+.catalog-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f5e9ed;
+  color: #7b1e3a;
+  border: 1px solid #e7c9d2;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.catalog-price {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #166534;
+}
+
+.catalog-desc {
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.catalog-desc.vacia {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.catalog-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.catalog-actions .btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 0.85rem;
+}
+
+.catalog-empty {
+  text-align: center;
+  color: #6b7280;
+  padding: 34px 18px;
+  border: 1px dashed #d1d5db;
+  border-radius: 12px;
+  background: #fafafa;
+}
+
+.catalog-empty i {
+  display: block;
+  font-size: 1.8rem;
+  color: #c9a7b2;
+  margin-bottom: 6px;
+}
+
+.catalog-form .form-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a6b74;
+  margin-bottom: 4px;
+}
+
+.catalog-form .form-control,
+.catalog-form .form-select {
+  border-radius: 10px;
+  border-color: #d1d5db;
+  font-family: inherit;
+}
+
+.catalog-form .form-control:focus,
+.catalog-form .form-select:focus {
+  border-color: #7b1e3a;
+  box-shadow: 0 0 0 2px rgba(123, 30, 58, 0.15);
+}
+
+.catalog-form .form-text {
+  color: #6b7280;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 640px) {
+  .catalog-search {
+    max-width: none;
+  }
+
+  .catalog-filter {
+    flex: 1 1 100%;
+  }
+
+  .catalog-actions .btn {
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .catalog-grid {
+    grid-template-columns: 1fr;
+  }
+}

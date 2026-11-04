@@ -7,147 +7,179 @@
  *   GET  /cargos/all      listar todos
  *   POST /cargos/add      insertar { nombre, porcentaje, predeterminado }
  *   POST /cargos/update   editar { idCargo, nombre, porcentaje, predeterminado }
- *   POST /cargos/delete   DESACTIVA el cargo
- *   POST /cargos/activar  reactiva
- *
- * REGLAS:
- *  - Nombre en MAYÚSCULAS (el backend también lo normaliza).
- *  - Porcentaje entre 0.01 y 100.
- *  - "Aplicar por defecto" (cargo.predeterminado = 1) solo afecta a las
- *    CUENTAS NUEVAS; no modifica las cuentas ya abiertas.
- *  - El monto NO se guarda: se calcula como base * porcentaje / 100.
- *  - Al editar el porcentaje, las cuentas abiertas conservan el porcentaje
- *    guardado en factura_cargo.
+ *   POST /cargos/delete   desactivar
+ *   POST /cargos/activar  reactivar
  * ============================================================================
  */
 import React from "react";
 import "../css/crud.css";
-import { Navbar, Nav, Container } from "react-bootstrap";
+import "../css/catalogo.css";
+import "../css/cargos.css";
+import { Navbar, Nav, Container, Modal, Button, Form } from "react-bootstrap";
 import axios from "axios";
 import Cookies from "universal-cookie";
-import { Button, Modal, ModalBody, ModalHeader } from "reactstrap";
+import Swal from "sweetalert2";
 import { ruta } from "../Ruta/ruta";
-import logo from "../images/logo.png"
+import logo from "../images/logo.png";
+
 const baseUrl = ruta.baseUrl;
 const cookies = new Cookies();
+
+const formVacio = () => ({ nombre: "", porcentaje: "", predeterminado: false });
+
+const fueError = (data) =>
+  Boolean(
+    data &&
+      typeof data === "object" &&
+      (data.error || data.sqlMessage || data.errno || data.code)
+  );
 
 class cargos extends React.Component {
   state = {
     cargos: [],
-    modalInsert: false,
-    msjModal: "",
-    nombre: "",
-    porcentaje: "",
-    predeterminado: false,
+    cargando: true,
+    modal: false,
+    modo: "crear",
     editId: null,
-    editNombre: "",
-    editPorcentaje: "",
-    editPredeterminado: false
+    form: formVacio(),
+    guardando: false
   };
 
   componentDidMount() {
     if (!cookies.get("idUsuario")) {
       window.location.href = "/login";
-    } else {
-      this.obtenerCargos();
-    }
-  }
-
-  obtenerCargos = async () => {
-    const res = await axios.get(baseUrl + "cargos/all");
-    this.setState({ cargos: res.data || [] });
-  };
-
-  validar = (nombre, porcentaje) => {
-    if ((nombre || "").trim() === "") return "Escriba el nombre del cargo";
-    const pct = Number(porcentaje);
-    if (isNaN(pct) || pct <= 0 || pct > 100) return "El porcentaje debe estar entre 0.01 y 100";
-    return null;
-  };
-
-  agregar = async () => {
-    const error = this.validar(this.state.nombre, this.state.porcentaje);
-    if (error) {
-      this.setState({ modalInsert: true, msjModal: error });
       return;
     }
+    this.cargar();
+  }
+
+  cargar = async () => {
+    this.setState({ cargando: true });
     try {
-      await axios.post(baseUrl + "cargos/add", {
-        nombre: this.state.nombre.toUpperCase(),
-        porcentaje: Number(this.state.porcentaje),
-        predeterminado: this.state.predeterminado ? 1 : 0
-      });
-      this.setState({ modalInsert: true, msjModal: "Cargo agregado", nombre: "", porcentaje: "", predeterminado: false });
-      this.obtenerCargos();
+      const res = await axios.get(baseUrl + "cargos/all");
+      this.setState({ cargos: res.data || [], cargando: false });
     } catch (e) {
-      const msj = e.response && e.response.data && e.response.data.error
-        ? e.response.data.error
-        : "No se pudo agregar el cargo";
-      this.setState({ modalInsert: true, msjModal: msj });
+      this.setState({ cargando: false });
+      Swal.fire("Error", "No se pudieron cargar los cargos.", "error");
     }
   };
 
-  editar = (c) => {
+  abrirCrear = () => {
+    this.setState({ modal: true, modo: "crear", editId: null, form: formVacio() });
+  };
+
+  abrirEditar = (cargo) => {
     this.setState({
-      editId: c.idCargo,
-      editNombre: c.nombre,
-      editPorcentaje: c.porcentaje,
-      editPredeterminado: Number(c.predeterminado) === 1
+      modal: true,
+      modo: "editar",
+      editId: cargo.idCargo,
+      form: {
+        nombre: cargo.nombre || "",
+        porcentaje: cargo.porcentaje != null ? String(cargo.porcentaje) : "",
+        predeterminado: Number(cargo.predeterminado) === 1
+      }
     });
   };
 
-  guardarEditar = async () => {
-    const error = this.validar(this.state.editNombre, this.state.editPorcentaje);
-    if (error) {
-      this.setState({ modalInsert: true, msjModal: error });
+  cerrarModal = () => {
+    this.setState({ modal: false, guardando: false, editId: null, form: formVacio() });
+  };
+
+  cambiarCampo = (campo, valor) => {
+    this.setState({ form: { ...this.state.form, [campo]: valor } });
+  };
+
+  guardar = async () => {
+    const nombre = (this.state.form.nombre || "").trim().toUpperCase();
+    const porcentaje = Number(this.state.form.porcentaje);
+    if (!nombre) {
+      Swal.fire("Falta el nombre", "Escriba el nombre del cargo.", "warning");
       return;
     }
+    if (Number.isNaN(porcentaje) || porcentaje <= 0 || porcentaje > 100) {
+      Swal.fire("Porcentaje inválido", "Debe estar entre 0.01 y 100.", "warning");
+      return;
+    }
+    this.setState({ guardando: true });
     try {
-      await axios.post(baseUrl + "cargos/update", {
-        idCargo: this.state.editId,
-        nombre: this.state.editNombre.toUpperCase(),
-        porcentaje: Number(this.state.editPorcentaje),
-        predeterminado: this.state.editPredeterminado ? 1 : 0
+      const datos = {
+        nombre,
+        porcentaje,
+        predeterminado: this.state.form.predeterminado ? 1 : 0
+      };
+      const res =
+        this.state.modo === "editar"
+          ? await axios.post(baseUrl + "cargos/update", {
+              ...datos,
+              idCargo: this.state.editId
+            })
+          : await axios.post(baseUrl + "cargos/add", datos);
+      if (fueError(res.data)) throw new Error("respuesta");
+      await this.cargar();
+      this.cerrarModal();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: this.state.modo === "editar" ? "Cargo actualizado" : "Cargo agregado",
+        showConfirmButton: false,
+        timer: 1500
       });
-      this.setState({
-        modalInsert: true,
-        msjModal: "Cargo actualizado",
-        editId: null,
-        editNombre: "",
-        editPorcentaje: "",
-        editPredeterminado: false
-      });
-      this.obtenerCargos();
     } catch (e) {
-      const msj = e.response && e.response.data && e.response.data.error
-        ? e.response.data.error
-        : "No se pudo actualizar el cargo";
-      this.setState({ modalInsert: true, msjModal: msj });
+      this.setState({ guardando: false });
+      const mensaje =
+        (e && e.response && e.response.data && e.response.data.error) ||
+        "No se pudo guardar el cargo.";
+      Swal.fire("Error", mensaje, "error");
     }
   };
 
-  cancelarEditar = () => {
-    this.setState({ editId: null, editNombre: "", editPorcentaje: "", editPredeterminado: false });
+  desactivar = async (cargo) => {
+    const confirmacion = await Swal.fire({
+      title: "Desactivar cargo",
+      html:
+        "¿Ocultar <strong>" +
+        (cargo.nombre || "") +
+        "</strong> en las cuentas nuevas?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Desactivar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280"
+    });
+    if (!confirmacion.isConfirmed) return;
+    try {
+      await axios.post(baseUrl + "cargos/delete", { idCargo: cargo.idCargo });
+      await this.cargar();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Cargo desactivado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      Swal.fire("Error", "No se pudo desactivar el cargo.", "error");
+    }
   };
 
-  eliminar = async (c) => {
-    await axios.post(baseUrl + "cargos/delete", { idCargo: c.idCargo });
-    this.setState({ modalInsert: true, msjModal: "Cargo desactivado" });
-    this.obtenerCargos();
-  };
-
-  activar = async (c) => {
-    await axios.post(baseUrl + "cargos/activar", { idCargo: c.idCargo });
-    this.setState({ modalInsert: true, msjModal: "Cargo activado" });
-    this.obtenerCargos();
-  };
-
-  handlechange = (e) => {
-    this.setState({ [e.target.name]: e.target.value });
-  };
-
-  ocultarModal = () => {
-    this.setState({ modalInsert: false });
+  activar = async (cargo) => {
+    try {
+      await axios.post(baseUrl + "cargos/activar", { idCargo: cargo.idCargo });
+      await this.cargar();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Cargo activado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      Swal.fire("Error", "No se pudo activar el cargo.", "error");
+    }
   };
 
   cerrarSesion = () => {
@@ -156,39 +188,87 @@ class cargos extends React.Component {
     window.location.href = "/login";
   };
 
+  renderCargo = (cargo, activo) => (
+    <div className="catalog-card cargo-card" key={cargo.idCargo}>
+      <div className="catalog-card-head">
+        <h3>{cargo.nombre}</h3>
+        <span className={"metodo-estado " + (activo ? "activo" : "inactivo")}>
+          {activo ? "Activo" : "Inactivo"}
+        </span>
+      </div>
+      <div className="cargo-porcentaje">{Number(cargo.porcentaje || 0)}%</div>
+      <div className="cargo-etiquetas">
+        {Number(cargo.predeterminado) === 1 ? (
+          <span className="catalog-badge cargo-default">
+            <i className="bi bi-check2-circle"></i> Por defecto
+          </span>
+        ) : (
+          <span className="cargo-sin-default">No se aplica por defecto</span>
+        )}
+      </div>
+      <div className="catalog-actions">
+        <Button size="sm" variant="outline-secondary" onClick={() => this.abrirEditar(cargo)}>
+          <i className="bi bi-pencil"></i> Editar
+        </Button>
+        {activo ? (
+          <Button size="sm" variant="outline-danger" onClick={() => this.desactivar(cargo)}>
+            <i className="bi bi-eye-slash"></i> Desactivar
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline-success" onClick={() => this.activar(cargo)}>
+            <i className="bi bi-arrow-clockwise"></i> Activar
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   render() {
+    const { cargos, cargando, modal, modo, form, guardando } = this.state;
+    const activos = (cargos || []).filter((c) => Number(c.activo) === 1);
+    const inactivos = (cargos || []).filter((c) => Number(c.activo) !== 1);
+
     return (
       <div className="App-body">
         <div>
           <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
             <Container>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                 <button id="btNavbar" onClick={() => { window.location.href = "/administracion" }} style={{ padding: "0.3rem 0.7rem" }}>
-                  <i className="bi bi-arrow-left"></i> Volver</button>
-                  <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
-                    <img
-                      src={logo}
-                      alt="Logo ViñedoPos"
-                      width="35"
-                      height="35"
-                      className="d-inline-block align-top"
-                    />
-                    <span>VinedoPos</span>
-                  </Navbar.Brand>
+                <button
+                  className="btnNavbar"
+                  onClick={() => {
+                    window.location.href = "/administracion";
+                  }}
+                  style={{ padding: "0.3rem 0.7rem" }}
+                >
+                  <i className="bi bi-arrow-left"></i> Volver
+                </button>
+                <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
+                  <img
+                    src={logo}
+                    alt="Logo ViñedoPos"
+                    width="35"
+                    height="35"
+                    className="d-inline-block align-top"
+                  />
+                  <span>VinedoPos</span>
+                </Navbar.Brand>
               </div>
-              <Navbar.Toggle aria-controls="responsive-navbar-nav" />
-              <Navbar.Collapse id="responsive-navbar-nav">
+              <Navbar.Toggle aria-controls="cargos-nav" />
+              <Navbar.Collapse id="cargos-nav">
                 <Nav className="me-auto">
                   <Nav.Link href="/administracion">
-                    <button id="btNavbar">Administración</button>
+                    <button className="btnNavbar">Administración</button>
                   </Nav.Link>
                   <Nav.Link href="/mesas">
-                    <button id="btNavbar">Mesas</button>
+                    <button className="btnNavbar">Mesas</button>
                   </Nav.Link>
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                    <button className="btnNavbar" onClick={this.cerrarSesion}>
+                      Cerrar sesión
+                    </button>
                   </Nav.Link>
                 </Nav>
               </Navbar.Collapse>
@@ -196,90 +276,118 @@ class cargos extends React.Component {
           </Navbar>
         </div>
 
-        <div className="crud-container">
-          <div className="TablaDatos" style={{ maxWidth: "760px" }}>
-            <h2>Cargos por porcentaje</h2>
-            <p style={{ color: "#6b7280", marginTop: "6px" }}>
-              Servicio, propina u otros. Se aplican a la cuenta desde Pedidos y salen en el ticket.
-            </p>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "20px", flexWrap: "wrap" }}>
-              <input id="cargoNombre" type="text" className="categoria" placeholder="Nombre (ej. SERVICIO)" name="nombre" value={this.state.nombre} onChange={this.handlechange} />
-              <input id="cargoPorcentaje" type="number" className="categoria" placeholder="Porcentaje %" name="porcentaje" min="0.01" max="100" step="0.01" value={this.state.porcentaje} onChange={this.handlechange} />
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", margin: 0, cursor: "pointer" }}>
-                <input type="checkbox" checked={this.state.predeterminado} onChange={(e) => this.setState({ predeterminado: e.target.checked })} />
-                Aplicar por defecto
-              </label>
-              <input type="submit" id="confirmar" value="Agregar" onClick={() => this.agregar()} />
+        <div className="config-shell">
+          <div className="config-panel">
+            <div className="config-header">
+              <div>
+                <h2>Cargos / Servicio</h2>
+                <p className="config-sub">
+                  Servicio, propina u otros cargos por porcentaje. Se aplican a la cuenta desde
+                  Pedidos y salen en el ticket.
+                </p>
+              </div>
+              <div className="config-header-actions">
+                <button type="button" className="btn btn-success btn-lg px-4" onClick={this.abrirCrear}>
+                  <i className="bi bi-plus-lg"></i> Nuevo cargo
+                </button>
+              </div>
             </div>
-            <hr style={{ marginTop: 30 }} />
-            <table className="table table-hover table-sm" style={{ marginTop: "20px" }}>
-              <thead className="thead-dark">
-                <tr>
-                  <th>Nombre</th>
-                  <th>Porcentaje</th>
-                  <th>Por defecto</th>
-                  <th>Estado</th>
-                  <th>Editar</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {this.state.cargos.map((c, index) => (
-                  <tr key={index}>
-                    <td style={{ textAlign: "left" }}>
-                      {this.state.editId === c.idCargo ? (
-                        <input type="text" value={this.state.editNombre} onChange={(e) => this.setState({ editNombre: e.target.value })} />
-                      ) : (
-                        c.nombre
-                      )}
-                    </td>
-                    <td>
-                      {this.state.editId === c.idCargo ? (
-                        <input type="number" style={{ width: "90px" }} min="0.01" max="100" step="0.01" value={this.state.editPorcentaje} onChange={(e) => this.setState({ editPorcentaje: e.target.value })} />
-                      ) : (
-                        c.porcentaje + "%"
-                      )}
-                    </td>
-                    <td>
-                      {this.state.editId === c.idCargo ? (
-                        <input type="checkbox" checked={this.state.editPredeterminado} onChange={(e) => this.setState({ editPredeterminado: e.target.checked })} />
-                      ) : (
-                        Number(c.predeterminado) === 1 ? "Sí" : "—"
-                      )}
-                    </td>
-                    <td>{c.activo === 1 ? "Activo" : "Inactivo"}</td>
-                    <td>
-                      {this.state.editId === c.idCargo ? (
-                        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                          <button className="btn btn-success btn-sm" onClick={this.guardarEditar}><i className="bi bi-check"></i></button>
-                          <button className="btn btn-secondary btn-sm" onClick={this.cancelarEditar}><i className="bi bi-x"></i></button>
-                        </div>
-                      ) : (
-                        <button className="btn btn-primary btn-sm" onClick={() => this.editar(c)}><i className="bi bi-pencil-square"></i></button>
-                      )}
-                    </td>
-                    <td>
-                      {c.activo === 1 ? (
-                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminar(c)}><i className="bi bi-trash"></i></button>
-                      ) : (
-                        <button className="btn btn-success btn-sm" onClick={() => this.activar(c)}><i className="bi bi-arrow-clockwise"></i></button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+            <div className="metodos-ayuda">
+              <i className="bi bi-percent"></i>
+              <div>
+                El monto se calcula como <strong>base × porcentaje ÷ 100</strong>. “Aplicar por
+                defecto” solo afecta las cuentas nuevas; las cuentas abiertas conservan su cargo.
+              </div>
+            </div>
+
+            {cargando ? (
+              <p>Cargando cargos...</p>
+            ) : (
+              <>
+                <h4 className="metodos-subtitulo">
+                  Activos <span className="config-badge">{activos.length}</span>
+                </h4>
+                {activos.length === 0 ? (
+                  <div className="catalog-empty">
+                    <i className="bi bi-percent"></i>
+                    No hay cargos activos. Agrega uno con “Nuevo cargo”.
+                  </div>
+                ) : (
+                  <div className="catalog-grid">
+                    {activos.map((cargo) => this.renderCargo(cargo, true))}
+                  </div>
+                )}
+
+                {inactivos.length > 0 && (
+                  <>
+                    <h4 className="metodos-subtitulo">
+                      Inactivos <span className="config-badge">{inactivos.length}</span>
+                    </h4>
+                    <div className="catalog-grid">
+                      {inactivos.map((cargo) => this.renderCargo(cargo, false))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
-        <Modal isOpen={this.state.modalInsert}>
-          <ModalHeader>
-            <div>
-              <h3 style={{ color: "black" }}>{this.state.msjModal}</h3>
-            </div>
-          </ModalHeader>
-          <ModalBody>
-            <Button onClick={() => this.ocultarModal()}>Aceptar</Button>
-          </ModalBody>
+
+        <Modal show={modal} onHide={this.cerrarModal} centered className="catalog-form">
+          <Modal.Header closeButton>
+            <Modal.Title>{modo === "editar" ? "Editar cargo" : "Nuevo cargo"}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form
+              onSubmit={(e) => {
+                e.preventDefault();
+                this.guardar();
+              }}
+            >
+              <Form.Group className="mb-3">
+                <Form.Label>Nombre</Form.Label>
+                <Form.Control
+                  autoFocus
+                  type="text"
+                  maxLength={60}
+                  value={form.nombre}
+                  placeholder="Ej. SERVICIO, PROPINA..."
+                  onChange={(e) => this.cambiarCampo("nombre", e.target.value)}
+                />
+              </Form.Group>
+              <Form.Group className="mb-3">
+                <Form.Label>Porcentaje</Form.Label>
+                <div className="input-group">
+                  <Form.Control
+                    type="number"
+                    min="0.01"
+                    max="100"
+                    step="0.01"
+                    value={form.porcentaje}
+                    placeholder="10"
+                    onChange={(e) => this.cambiarCampo("porcentaje", e.target.value)}
+                  />
+                  <span className="input-group-text">%</span>
+                </div>
+              </Form.Group>
+              <Form.Check
+                type="checkbox"
+                id="cargo-predeterminado"
+                label="Aplicar por defecto en cuentas nuevas"
+                checked={Boolean(form.predeterminado)}
+                onChange={(e) => this.cambiarCampo("predeterminado", e.target.checked)}
+              />
+            </Form>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={this.cerrarModal}>
+              Cancelar
+            </Button>
+            <Button variant="success" onClick={this.guardar} disabled={guardando}>
+              {guardando ? "Guardando..." : "Guardar"}
+            </Button>
+          </Modal.Footer>
         </Modal>
       </div>
     );

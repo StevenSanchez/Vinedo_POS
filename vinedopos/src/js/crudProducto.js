@@ -4,272 +4,308 @@
  * PROPÓSITO: ABM de productos del catálogo.
  *
  * ENDPOINTS:
- *   GET  /categorias/        llenar el selector de categorías
- *   POST /productos/         productos de una categoría ({ categoriaID })
- *   POST /Productos/add      insertar
+ *   GET  /categorias/         llenar el selector de categorías
+ *   POST /productos/          productos de una categoría ({ categoriaID })
+ *   POST /Productos/add/      insertar
  *   POST /Producto/actualizar actualizar nombre/descripcion/precio
- *   POST /Producto/delete    borrar por codigo
- *
- * COMPORTAMIENTO:
- *  - Al elegir una categoría se recargan sus productos.
- *  - El update NO cambia la categoría de un producto existente.
- *  - `precio` es el precio de catálogo; las cuentas ya creadas conservan su
- *    lineafactura.Precio (override por línea).
- *  - Si el producto está usado en lineafactura, el borrado falla por FK y se
- *    muestra el error crudo de MySQL.
- *
- * ESTILO: legado imperativo (document.getElementById + style.display +
- * banderas titulos1/titulos2/titulosAdd para saber qué panel está activo).
+ *   POST /Producto/delete     borrar por codigo
  * ============================================================================
  */
 import React from "react";
 import "../css/crud.css";
-import { Navbar, Nav, Container } from "react-bootstrap";
+import "../css/catalogo.css";
+import { Navbar, Nav, Container, Modal, Button, Form, Row, Col } from "react-bootstrap";
 import axios from "axios";
 import Cookies from "universal-cookie";
-import { Button, Modal, ModalBody, ModalHeader } from "reactstrap";
+import Swal from "sweetalert2";
 import { ruta } from "../Ruta/ruta";
-import logo from "../images/logo.png"
+import logo from "../images/logo.png";
+
 const baseUrl = ruta.baseUrl;
 const cookies = new Cookies();
+
+const fueError = (data) =>
+  Boolean(
+    data &&
+      typeof data === "object" &&
+      (data.error || data.sqlMessage || data.errno || data.code)
+  );
+
+const formVacio = (categoria) => ({
+  nombre: "",
+  descripcion: "",
+  precio: "",
+  categoria: Number(categoria) || 0
+});
+
+const money = (valor) =>
+  Number(valor || 0).toLocaleString("es-CR", { maximumFractionDigits: 2 });
+
 class crudProducto extends React.Component {
   state = {
-    modalInsert: false,
-    nombreProducto: "",
-    descripcionProducto: "",
-    precioProducto: 0,
-    idProducto: 0,
-    categoria: 0,
     categorias: [],
     productos: [],
-    producto: [],
-  };
-
-  ocultarModal() {
-    this.setState({ modalInsert: false });
-  }
-
-  handlechange = async (e) => {
-    await this.setState({
-      ...this.state,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  handlerChange = async (e) => {
-    this.obtenerProductos(e.target.value);
-  };
-
-  handlerProducto = async (e) => {
-    if (document.getElementById("titulos2").value !== "0") {
-      await this.setState({
-        ...this.state,
-        [e.target.name]: e.target.value,
-      });
-      this.state.producto = this.state.productos.find((obj) => {
-        return obj.codigo === parseInt(e.target.value);
-      });
-      this.state.nombreProducto = this.state.producto.nombre;
-      this.state.descripcionProducto = this.state.producto.descripcion;
-      this.state.precioProducto = this.state.producto.precio;
-      document.getElementById(
-        "nombreProducto"
-      ).value = this.state.producto.nombre;
-      document.getElementById(
-        "descripcionProducto"
-      ).value = this.state.producto.descripcion;
-      document.getElementById(
-        "precioProducto"
-      ).value = this.state.producto.precio;
-    } else {
-      document.getElementById("nombreProducto").value = "";
-      document.getElementById("descripcionProducto").value = "";
-      document.getElementById("precioProducto").value = "";
-    }
-  };
-  cerrarSesion = () => {
-    cookies.remove("idUsuario", { path: "/" });
-    cookies.remove("usuario", { path: "/" });
-    window.location.href = "/login";
-  };
-  ocultarDiv(str) {
-    if (str === "agregar") {
-      document.getElementById("titulosAdd").value = "0";
-      document.getElementById("nombreProductoAdd").value = "";
-      document.getElementById("descripcionProductoAdd").value = "";
-      document.getElementById("precioProductoAdd").value = "";
-      document.getElementById("divModificar").style.display = "none";
-      document.getElementById("divEliminar").style.display = "none";
-      document.getElementById("divAgregar").style.display = "block";
-    } else if (str === "modificar") {
-      document.getElementById("titulos1").value = "0";
-      document.getElementById("titulos2").value = "0";
-      document.getElementById("nombreProducto").value = "";
-      document.getElementById("descripcionProducto").value = "";
-      document.getElementById("precioProducto").value = "";
-      document.getElementById("divAgregar").style.display = "none";
-      document.getElementById("divEliminar").style.display = "none";
-      document.getElementById("divModificar").style.display = "block";
-    } else if (str === "eliminar") {
-      document.getElementById("titulos1Del").value = "0";
-      document.getElementById("titulos2Del").value = "0";
-      document.getElementById("divAgregar").style.display = "none";
-      document.getElementById("divModificar").style.display = "none";
-      document.getElementById("divEliminar").style.display = "block";
-    } else if (str === "ocultar") {
-      document.getElementById("divAgregar").style.display = "none";
-      document.getElementById("divModificar").style.display = "none";
-      document.getElementById("divEliminar").style.display = "none";
-    }
-  }
-
-  obtenerCategorias() {
-    axios.get(baseUrl + "categorias/").then((res) => {
-      this.setState({
-        ...this.state,
-        categorias: res.data,
-      });
-    });
-  }
-
-  obtenerProductos(categoriaID) {
-    document.getElementById("titulos2").value = "0";
-    document.getElementById("nombreProducto").value = "";
-    document.getElementById("descripcionProducto").value = "";
-    document.getElementById("precioProducto").value = "";
-    const categoriaDB = {
-      categoriaID: categoriaID,
-    };
-    axios.post(baseUrl + "productos/", categoriaDB).then((res) => {
-      this.setState({
-        ...this.state,
-        productos: res.data,
-      });
-    });
-  }
-
-  insertarProducto = async () => {
-    if (
-      document.getElementById("titulosAdd").value !== "0" &&
-      this.state.nombreProducto !== "" &&
-      this.state.descripcionProducto !== "" &&
-      this.state.precioProducto !== ""
-    ) {
-      const productoDB = {
-        nombreProducto: this.state.nombreProducto,
-        descripcionProducto: this.state.descripcionProducto,
-        precioProducto: this.state.precioProducto,
-        categoria: this.state.categoria,
-      };
-      await axios.post(baseUrl + "Productos/add/", productoDB).then((res) => {
-        this.state.msjModal = res.data;
-        this.ocultarDiv("ocultar");
-      });
-      this.setState({ modalInsert: true });
-    } else {
-      this.state.msjModal = "Por favor introduzca valores en todos los campos";
-      this.setState({ modalInsert: true });
-    }
-  };
-
-  eliminarProducto = async () => {
-    if (
-      document.getElementById("titulos1Del").value !== "0" &&
-      document.getElementById("titulos2Del").value !== "0"
-    ) {
-      const productoDB = {
-        idProducto: this.state.idProducto,
-      };
-      await axios.post(baseUrl + "Producto/delete", productoDB).then((res) => {
-        this.state.msjModal = res.data;
-        this.obtenerCategorias();
-        this.state.productos = [];
-      });
-      document.getElementById("titulos1Del").value = "0";
-      document.getElementById("titulos2Del").value = "0";
-      this.setState({ modalInsert: true });
-      this.ocultarDiv("ocultar");
-    } else {
-      this.state.msjModal = "Favor elegir el producto a eliminar";
-      this.setState({ modalInsert: true });
-    }
-  };
-
-  actualizarProductos = async () => {
-    if (
-      document.getElementById("titulos1").value !== "0" &&
-      document.getElementById("titulos2").value !== "0" &&
-      this.state.idProducto !== "" &&
-      this.state.nombreProducto !== "" &&
-      this.state.descripcionProducto !== "" &&
-      this.state.precioProducto !== ""
-    ) {
-      const productoDB = {
-        codigo: this.state.idProducto,
-        nombre: this.state.nombreProducto,
-        descripcion: this.state.descripcionProducto,
-        precio: this.state.precioProducto,
-      };
-      await axios
-        .post(baseUrl + "Producto/actualizar", productoDB)
-        .then((res) => {
-          this.state.msjModal = res.data;
-        });
-      document.getElementById("titulos1").value = "0";
-      document.getElementById("titulos2").value = "0";
-      this.state.idProducto = "";
-      this.state.nombreProducto = "";
-      this.state.descripcionProducto = "";
-      this.state.precioProducto = "";
-      this.setState({ modalInsert: true });
-      this.ocultarDiv("ocultar");
-    } else {
-      this.state.msjModal = "Por favor introduzca valores en todos los campos";
-      this.setState({ modalInsert: true });
-    }
+    categoriaSeleccionada: 0,
+    cargando: false,
+    busqueda: "",
+    modal: false,
+    modo: "crear",
+    editando: null,
+    form: formVacio(0),
+    guardando: false
   };
 
   componentDidMount() {
     if (!cookies.get("idUsuario")) {
       window.location.href = "/login";
-    } else {
-      this.obtenerCategorias();
+      return;
     }
+    this.cargarCategorias();
   }
 
+  cargarCategorias = async () => {
+    try {
+      const res = await axios.get(baseUrl + "categorias/");
+      const categorias = res.data || [];
+      const actual =
+        Number(this.state.categoriaSeleccionada) ||
+        (categorias[0] ? Number(categorias[0].idCategoria) : 0);
+      this.setState({ categorias, categoriaSeleccionada: actual });
+      if (actual) await this.cargarProductos(actual);
+    } catch (e) {
+      Swal.fire("Error", "No se pudieron cargar las categorías.", "error");
+    }
+  };
+
+  cargarProductos = async (idCategoria) => {
+    const categoriaID = Number(idCategoria) || 0;
+    if (!categoriaID) {
+      this.setState({ productos: [], cargando: false });
+      return;
+    }
+    this.setState({ cargando: true });
+    try {
+      const res = await axios.post(baseUrl + "productos/", { categoriaID });
+      this.setState({ productos: res.data || [], cargando: false });
+    } catch (e) {
+      this.setState({ productos: [], cargando: false });
+      Swal.fire("Error", "No se pudieron cargar los productos.", "error");
+    }
+  };
+
+  cambiarCategoria = (e) => {
+    const id = Number(e.target.value) || 0;
+    this.setState({ categoriaSeleccionada: id, busqueda: "" });
+    this.cargarProductos(id);
+  };
+
+  abrirCrear = () => {
+    const categoria =
+      this.state.categoriaSeleccionada ||
+      (this.state.categorias[0] ? this.state.categorias[0].idCategoria : 0);
+    this.setState({
+      modal: true,
+      modo: "crear",
+      editando: null,
+      form: formVacio(categoria)
+    });
+  };
+
+  abrirEditar = (producto) => {
+    this.setState({
+      modal: true,
+      modo: "editar",
+      editando: producto,
+      form: {
+        nombre: producto.nombre || "",
+        descripcion: producto.descripcion || "",
+        precio: producto.precio != null ? String(producto.precio) : "",
+        categoria: Number(producto.idCategoria) || this.state.categoriaSeleccionada
+      }
+    });
+  };
+
+  cerrarModal = () => {
+    this.setState({ modal: false, guardando: false, editando: null, form: formVacio(0) });
+  };
+
+  cambiarCampo = (campo, valor) => {
+    this.setState({ form: { ...this.state.form, [campo]: valor } });
+  };
+
+  guardar = async () => {
+    const { form, modo, editando } = this.state;
+    const nombre = (form.nombre || "").trim();
+    const descripcion = (form.descripcion || "").trim();
+    const precio = Number(form.precio);
+    const categoria = Number(form.categoria);
+
+    if (!nombre) {
+      Swal.fire("Falta el nombre", "Escriba el nombre del producto.", "warning");
+      return;
+    }
+    if (form.precio === "" || Number.isNaN(precio) || precio < 0) {
+      Swal.fire("Precio inválido", "Ingrese un precio de 0 o mayor.", "warning");
+      return;
+    }
+    if (!categoria) {
+      Swal.fire("Falta la categoría", "Seleccione una categoría.", "warning");
+      return;
+    }
+
+    this.setState({ guardando: true });
+    try {
+      const res =
+        modo === "editar"
+          ? await axios.post(baseUrl + "Producto/actualizar", {
+              codigo: editando.codigo,
+              nombre,
+              descripcion,
+              precio,
+              idCategoria: categoria
+            })
+          : await axios.post(baseUrl + "Productos/add/", {
+              nombreProducto: nombre,
+              descripcionProducto: descripcion,
+              precioProducto: precio,
+              categoria
+            });
+      if (fueError(res.data)) throw new Error("respuesta");
+      this.setState({
+        modal: false,
+        guardando: false,
+        editando: null,
+        form: formVacio(0),
+        categoriaSeleccionada: categoria
+      });
+      await this.cargarProductos(categoria);
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: modo === "editar" ? "Producto actualizado" : "Producto creado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      this.setState({ guardando: false });
+      Swal.fire("Error", "No se pudo guardar el producto.", "error");
+    }
+  };
+
+  eliminar = async (producto) => {
+    const confirmacion = await Swal.fire({
+      title: "Eliminar producto",
+      html: "¿Eliminar <strong>" + (producto.nombre || "") + "</strong>?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Eliminar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280"
+    });
+    if (!confirmacion.isConfirmed) return;
+    try {
+      const res = await axios.post(baseUrl + "Producto/delete", {
+        idProducto: producto.codigo
+      });
+      if (fueError(res.data)) {
+        Swal.fire(
+          "No se puede eliminar",
+          "Este producto ya se usó en pedidos. Puede dejar de venderlo cambiando su categoría o precio.",
+          "error"
+        );
+        return;
+      }
+      await this.cargarProductos(this.state.categoriaSeleccionada);
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Producto eliminado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      Swal.fire(
+        "No se puede eliminar",
+        "El producto ya se usó en pedidos o no está disponible.",
+        "error"
+      );
+    }
+  };
+
+  cerrarSesion = () => {
+    cookies.remove("idUsuario", { path: "/" });
+    cookies.remove("usuario", { path: "/" });
+    window.location.href = "/login";
+  };
+
   render() {
+    const {
+      categorias,
+      productos,
+      categoriaSeleccionada,
+      cargando,
+      busqueda,
+      modal,
+      modo,
+      form,
+      guardando
+    } = this.state;
+
+    const categoriaActual = (categorias || []).find(
+      (c) => Number(c.idCategoria) === Number(categoriaSeleccionada)
+    );
+    const q = busqueda.trim().toLowerCase();
+    const filtrados = (productos || []).filter(
+      (p) =>
+        String(p.nombre || "").toLowerCase().includes(q) ||
+        String(p.descripcion || "").toLowerCase().includes(q)
+    );
+
     return (
       <div className="App-body">
         <div>
           <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
             <Container>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                 <button id="btNavbar" onClick={() => { window.location.href = "/administracion" }} style={{ padding: "0.3rem 0.7rem" }}>
-                  <i className="bi bi-arrow-left"></i> Volver</button>
-                  <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
-                    <img
-                      src={logo}
-                      alt="Logo ViñedoPos"
-                      width="35"
-                      height="35"
-                      className="d-inline-block align-top"
-                    />
-                    <span>VinedoPos</span>
-                  </Navbar.Brand>
+                <button
+                  className="btnNavbar"
+                  onClick={() => {
+                    window.location.href = "/administracion";
+                  }}
+                  style={{ padding: "0.3rem 0.7rem" }}
+                >
+                  <i className="bi bi-arrow-left"></i> Volver
+                </button>
+                <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
+                  <img
+                    src={logo}
+                    alt="Logo ViñedoPos"
+                    width="35"
+                    height="35"
+                    className="d-inline-block align-top"
+                  />
+                  <span>VinedoPos</span>
+                </Navbar.Brand>
               </div>
-              <Navbar.Toggle aria-controls="responsive-navbar-nav" />
-              <Navbar.Collapse id="responsive-navbar-nav">
+              <Navbar.Toggle aria-controls="productos-nav" />
+              <Navbar.Collapse id="productos-nav">
                 <Nav className="me-auto">
                   <Nav.Link href="/administracion">
-                    <button id="btNavbar">Administración</button>
+                    <button className="btnNavbar">Administración</button>
                   </Nav.Link>
                   <Nav.Link href="/mesas">
-                    <button id="btNavbar">Mesas</button>
+                    <button className="btnNavbar">Mesas</button>
+                  </Nav.Link>
+                  <Nav.Link href="/crudCategoria">
+                    <button className="btnNavbar">Categorías</button>
                   </Nav.Link>
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>
+                    <button className="btnNavbar" onClick={this.cerrarSesion}>
                       Cerrar sesión
                     </button>
                   </Nav.Link>
@@ -279,226 +315,186 @@ class crudProducto extends React.Component {
           </Navbar>
         </div>
 
-        <div className="crud-container">
-          <div className="TablaDatos" style={{ maxWidth: "900px" }}>
-            <h2>Productos</h2>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", justifyContent: "center", marginTop: "20px" }}>
-              <input
-                type="submit"
-                id="confirmar"
-                value="Agregar"
-                onClick={() => this.ocultarDiv("agregar")}
-              />
-              <input
-                type="submit"
-                id="confirmar"
-                value="Modificar"
-                onClick={() => this.ocultarDiv("modificar")}
-              />
-              <input
-                type="submit"
-                id="confirmar"
-                value="Eliminar"
-                onClick={() => this.ocultarDiv("eliminar")}
-              />
+        <div className="config-shell">
+          <div className="config-panel">
+            <div className="config-header">
+              <div>
+                <h2>Productos</h2>
+                <p className="config-sub">
+                  Catálogo de productos por categoría. El precio se usa al agregar el producto a
+                  una cuenta.
+                </p>
+              </div>
+              <div className="config-header-actions">
+                <button
+                  type="button"
+                  className="btn btn-success btn-lg px-4"
+                  onClick={this.abrirCrear}
+                  disabled={categorias.length === 0}
+                >
+                  <i className="bi bi-plus-lg"></i> Nuevo producto
+                </button>
+              </div>
             </div>
-            <hr style={{ marginTop: 30 }} />
 
-            {/*-------------------------------------------------Div Opciones Agregar*/}
-          <div
-            className="divAgregar"
-            id="divAgregar"
-            style={{ display: "none" }}
-          >
-            <form>
-              <input
-                id="nombreProductoAdd"
-                name="nombreProducto"
-                type="text"
-                className="name"
-                placeholder="Nombre"
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-              <textarea
-                id="descripcionProductoAdd"
-                name="descripcionProducto"
-                type="text"
-                className="desc"
-                placeholder="Descripción"
-                style={{ marginTop: 20 }}
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-              <input
-                id="precioProductoAdd"
-                name="precioProducto"
-                type="number"
-                className="price"
-                placeholder="Precio"
-                style={{ marginTop: 20 }}
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-              <select
-                id="titulosAdd"
-                className="cbcategoria"
-                name="categoria"
-                style={{ marginTop: 20 }}
-                onChange={this.handlechange}
-              >
-                <option value="0">Elije una Categoria</option>
-                {this.state.categorias.map((categoria) => (
-                  <option value={categoria.idCategoria}>
-                    {categoria.Descripcion}
-                  </option>
+            <div className="catalog-toolbar">
+              <div className="catalog-filter">
+                <label htmlFor="categoria-filtro">Categoría</label>
+                <select
+                  id="categoria-filtro"
+                  value={categoriaSeleccionada}
+                  onChange={this.cambiarCategoria}
+                >
+                  {(categorias || []).map((categoria) => (
+                    <option key={categoria.idCategoria} value={categoria.idCategoria}>
+                      {categoria.Descripcion}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="catalog-search">
+                <i className="bi bi-search"></i>
+                <input
+                  type="text"
+                  placeholder="Buscar producto..."
+                  value={busqueda}
+                  onChange={(e) => this.setState({ busqueda: e.target.value })}
+                />
+              </div>
+
+              <span className="catalog-count">
+                {filtrados.length} de {(productos || []).length} productos
+              </span>
+            </div>
+
+            {cargando ? (
+              <p>Cargando productos...</p>
+            ) : filtrados.length === 0 ? (
+              <div className="catalog-empty">
+                <i className="bi bi-box-seam"></i>
+                {categorias.length === 0
+                  ? "Primero crea una categoría para poder agregar productos."
+                  : q
+                  ? "No hay productos que coincidan con la búsqueda."
+                  : categoriaActual
+                  ? "Esta categoría todavía no tiene productos."
+                  : "Seleccione una categoría."}
+              </div>
+            ) : (
+              <div className="catalog-grid">
+                {filtrados.map((producto) => (
+                  <div className="catalog-card" key={producto.codigo}>
+                    <div className="catalog-card-head">
+                      <h3>{producto.nombre}</h3>
+                      <span className="catalog-badge">{categoriaActual ? categoriaActual.Descripcion : "Sin categoría"}</span>
+                    </div>
+                    <div className="catalog-price">₡ {money(producto.precio)}</div>
+                    <p className={"catalog-desc" + (producto.descripcion ? "" : " vacia")}>
+                      {producto.descripcion || "Sin descripción"}
+                    </p>
+                    <div className="catalog-actions">
+                      <Button
+                        size="sm"
+                        variant="outline-secondary"
+                        onClick={() => this.abrirEditar(producto)}
+                      >
+                        <i className="bi bi-pencil"></i> Editar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline-danger"
+                        onClick={() => this.eliminar(producto)}
+                      >
+                        <i className="bi bi-trash"></i> Eliminar
+                      </Button>
+                    </div>
+                  </div>
                 ))}
-              </select>
-              <br />
-            </form>
-            <input
-              type="submit"
-              id="confirmar"
-              value="Agregar Producto"
-              style={{ marginTop: 20 }}
-              onClick={() => this.insertarProducto()}
-            />
-          </div>
-
-          {/*-------------------------------------------------Div Opciones Modificar*/}
-          <div
-            className="divModificar"
-            id="divModificar"
-            style={{ display: "none" }}
-          >
-            <select
-              id="titulos1"
-              className="cbcategoria"
-              name="categoria"
-              style={{ marginTop: 20 }}
-              onChange={this.handlerChange}
-            >
-              <option value="0">Elije una Categoria</option>
-              {this.state.categorias.map((categoria) => (
-                <option value={categoria.idCategoria}>
-                  {categoria.Descripcion}
-                </option>
-              ))}
-            </select>
-            <br />
-            <select
-              id="titulos2"
-              className="cbcategoria"
-              name="idProducto"
-              style={{ marginTop: 20 }}
-              onChange={this.handlerProducto}
-            >
-              <option value="0">Elije un Producto</option>
-              {this.state.productos.map((producto) => (
-                <option value={producto.codigo}>{producto.nombre}</option>
-              ))}
-            </select>
-
-            <form>
-              <br />
-              <input
-                id="nombreProducto"
-                name="nombreProducto"
-                type="text"
-                className="name"
-                placeholder="Nombre"
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-              <textarea
-                id="descripcionProducto"
-                name="descripcionProducto"
-                type="text"
-                className="desc"
-                placeholder="Descripción"
-                style={{ marginTop: 20 }}
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-              <input
-                id="precioProducto"
-                name="precioProducto"
-                type="number"
-                className="price"
-                placeholder="Precio"
-                style={{ marginTop: 20 }}
-                onChange={this.handlechange}
-                required
-              />
-              <br />
-            </form>
-            <input
-              type="submit"
-              id="confirmar"
-              value="Modificar Producto"
-              style={{ marginTop: 20 }}
-              onClick={() => this.actualizarProductos()}
-            />
-          </div>
-
-          {/*-------------------------------------------------Div Opciones Eliminar*/}
-          <div
-            className="divEliminar"
-            id="divEliminar"
-            style={{ display: "none" }}
-          >
-            <select
-              id="titulos1Del"
-              className="cbcategoria"
-              name="categoria"
-              style={{ marginTop: 20 }}
-              onChange={this.handlerChange}
-            >
-              <option value="0">Elegir Categoria</option>
-              {this.state.categorias.map((categoria) => (
-                <option value={categoria.idCategoria}>
-                  {categoria.Descripcion}
-                </option>
-              ))}
-            </select>
-            <br />
-            <select
-              id="titulos2Del"
-              className="cbcategoria"
-              name="idProducto"
-              style={{ marginTop: 20 }}
-              onChange={this.handlechange}
-            >
-              <option value="0">Elegir Producto</option>
-              {this.state.productos.map((producto) => (
-                <option value={producto.codigo}>{producto.nombre}</option>
-              ))}
-            </select>
-            <br />
-            <input
-              type="submit"
-              id="confirmar"
-              value="Eliminar Producto"
-              style={{ marginTop: 20 }}
-              onClick={() => this.eliminarProducto()}
-            />
-            </div>
+              </div>
+            )}
           </div>
         </div>
-        <Modal isOpen={this.state.modalInsert}>
-          <ModalHeader>
-            <div>
-              <h3 style={{ color: "black" }}>{this.state.msjModal}</h3>
-            </div>
-          </ModalHeader>
-          <ModalBody>
-            <Button onClick={() => this.ocultarModal()}>Aceptar</Button>
-          </ModalBody>
+
+        <Modal show={modal} onHide={this.cerrarModal} centered className="catalog-form">
+          <Modal.Header closeButton>
+            <Modal.Title>{modo === "editar" ? "Editar producto" : "Nuevo producto"}</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form
+              onSubmit={(e) => {
+                e.preventDefault();
+                this.guardar();
+              }}
+            >
+              <Form.Group className="mb-3">
+                <Form.Label>Nombre</Form.Label>
+                <Form.Control
+                  autoFocus
+                  type="text"
+                  value={form.nombre}
+                  maxLength={80}
+                  placeholder="Ej. Lomito, Imperial..."
+                  onChange={(e) => this.cambiarCampo("nombre", e.target.value)}
+                />
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Descripción</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={2}
+                  value={form.descripcion}
+                  maxLength={180}
+                  placeholder="Descripción breve (opcional)"
+                  onChange={(e) => this.cambiarCampo("descripcion", e.target.value)}
+                />
+              </Form.Group>
+
+              <Row className="g-3">
+                <Col xs={12} sm={6}>
+                  <Form.Group>
+                    <Form.Label>Precio</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form.precio}
+                      placeholder="0"
+                      onChange={(e) => this.cambiarCampo("precio", e.target.value)}
+                    />
+                  </Form.Group>
+                </Col>
+                <Col xs={12} sm={6}>
+                  <Form.Group>
+                    <Form.Label>Categoría</Form.Label>
+                    <Form.Select
+                      value={form.categoria}
+                      onChange={(e) => this.cambiarCampo("categoria", e.target.value)}
+                    >
+                      <option value="0">Seleccione categoría</option>
+                      {(categorias || []).map((categoria) => (
+                        <option key={categoria.idCategoria} value={categoria.idCategoria}>
+                          {categoria.Descripcion}
+                        </option>
+                      ))}
+                    </Form.Select>
+                    <Form.Text>
+                      Puede mover el producto a otra categoría al editarlo.
+                    </Form.Text>
+                  </Form.Group>
+                </Col>
+              </Row>
+            </Form>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={this.cerrarModal}>
+              Cancelar
+            </Button>
+            <Button variant="success" onClick={this.guardar} disabled={guardando}>
+              {guardando ? "Guardando..." : "Guardar"}
+            </Button>
+          </Modal.Footer>
         </Modal>
       </div>
     );

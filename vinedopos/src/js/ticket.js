@@ -132,6 +132,67 @@ export const fechaHoraActual = () => {
   };
 };
 
+// Devuelve SOLO las guarniciones visibles al cliente, con su grupo y precio.
+// El término de carne y demás opciones internas nunca salen en el ticket.
+export const guarnicionesTicket = (linea) => {
+  if (!linea) return [];
+  const normalizar = (m) => ({
+    Grupo: m.GrupoNombre || m.Grupo || "Guarnición",
+    Nombre: m.ItemNombre || m.Nombre || m.nombre || "",
+    Precio: Number(
+      m.PrecioExtra !== undefined && m.PrecioExtra !== null
+        ? m.PrecioExtra
+        : m.Precio !== undefined && m.Precio !== null
+          ? m.Precio
+          : 0
+    ) || 0
+  });
+
+  const detalle = linea._guarnicionesDetalle || linea.GuarnicionesDetalle;
+  if (Array.isArray(detalle) && detalle.length > 0) {
+    return detalle.map(normalizar).filter((g) => g.Nombre);
+  }
+
+  const mods = Array.isArray(linea.Modificadores) ? linea.Modificadores : [];
+  const esInterno = (m) =>
+    Number(m.SoloInterno) === 1 || /t[eé]rmino/i.test(String(m.GrupoNombre || ""));
+  const visibles = mods.filter((m) => !esInterno(m));
+  if (visibles.length > 0) {
+    return visibles.map(normalizar).filter((g) => g.Nombre);
+  }
+
+  const compactas = linea._guarnicionesCompactas || linea.guarnicionesCompactas;
+  if (Array.isArray(compactas)) {
+    return compactas
+      .map((m) => (typeof m === "string" ? m : normalizar(m).Nombre))
+      .filter(Boolean)
+      .map((Nombre) => ({ Grupo: "Guarnición", Nombre, Precio: 0 }));
+  }
+  if (typeof compactas === "string" && compactas.trim()) {
+    return compactas
+      .split(",")
+      .map((Nombre) => Nombre.trim())
+      .filter(Boolean)
+      .map((Nombre) => ({ Grupo: "Guarnición", Nombre, Precio: 0 }));
+  }
+
+  const guarn = linea.Guarniciones || linea.guarniciones;
+  if (Array.isArray(guarn)) {
+    return guarn
+      .map((m) => (typeof m === "string" ? m : normalizar(m).Nombre))
+      .filter(Boolean)
+      .map((Nombre) => ({ Grupo: "Guarnición", Nombre, Precio: 0 }));
+  }
+  if (typeof guarn === "string" && guarn.trim()) {
+    return guarn
+      .split(",")
+      .map((Nombre) => Nombre.trim())
+      .filter(Boolean)
+      .map((Nombre) => ({ Grupo: "Guarnición", Nombre, Precio: 0 }));
+  }
+  return [];
+};
+
 export const datosDesdeDetalle = (detalle, modo) => {
   const cab = (detalle && detalle.cabecera) || {};
   const lineas = (detalle && detalle.lineas) || [];
@@ -157,7 +218,8 @@ export const datosDesdeDetalle = (detalle, modo) => {
       Nombre: l.Nombre || "",
       Cantidad: Number(l.Cantidad || 0),
       Precio: Number(l.Precio || 0),
-      Subtotal: Number(l.Subtotal || 0)
+      Subtotal: Number(l.Subtotal || 0),
+      _guarnicionesDetalle: guarnicionesTicket(l)
     })),
     cargos,
     total,
@@ -245,7 +307,27 @@ export const construirTicketHTML = (datos, configEntrada, modo) => {
     if (mostrarSubtotalLinea) {
       celdas.push(`<td class="importe">${escapar(formatearMoneda(linea.Subtotal, formato))}</td>`);
     }
-    return `<tr>${celdas.join("")}</tr>`;
+    let html = `<tr>${celdas.join("")}</tr>`;
+
+    // Cada guarnición va en su propia fila: nombre a la izquierda y precio
+    // alineado en la misma columna Importe, debajo del precio del platillo.
+    guarnicionesTicket(linea).forEach((g) => {
+      const celdasGuarnicion = [];
+      if (mostrarCantidad) celdasGuarnicion.push(`<td class="cant"></td>`);
+      const precioTexto = Number(g.Precio) > 0
+        ? formatearMoneda(g.Precio, formato)
+        : "";
+      celdasGuarnicion.push(
+        `<td class="desc guarn-desc">+ ${escapar(g.Nombre)}${
+          mostrarSubtotalLinea ? "" : (precioTexto ? ` (${escapar(precioTexto)})` : "")
+        }</td>`
+      );
+      if (mostrarSubtotalLinea) {
+        celdasGuarnicion.push(`<td class="importe guarn-importe">${escapar(precioTexto)}</td>`);
+      }
+      html += `<tr class="guarn-fila">${celdasGuarnicion.join("")}</tr>`;
+    });
+    return html;
   }).join("");
 
   const totales = [];
@@ -291,11 +373,16 @@ export const construirTicketHTML = (datos, configEntrada, modo) => {
   // La impresión real vuelve a medir el contenido, pero la estimación debe ser
   // generosa para que nunca se corte en dos páginas.
   const altoLineaMm = (fuente * 1.35) / 3.7795;
+  const renglonesGuarniciones = lineas.reduce(
+    (acc, linea) => acc + guarnicionesTicket(linea).length,
+    0
+  );
   const renglones =
     10 +
     encabezado.length +
     meta.length +
     lineas.length * (mostrarUnitario ? 4 : 3) +
+    renglonesGuarniciones +
     totales.length +
     cargos.length +
     pagos.length +
@@ -363,6 +450,25 @@ export const construirTicketHTML = (datos, configEntrada, modo) => {
   table.items .importe { width: 20mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   table.items .desc { word-break: break-word; }
   table.items .unit { font-size: 0.85em; }
+  table.items tr.guarn-fila td {
+    padding-top: 1px;
+    padding-bottom: 1px;
+  }
+  table.items .guarn-desc {
+    padding-left: 4mm;
+    font-size: 0.88em;
+    text-align: left;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  table.items .guarn-importe {
+    font-size: 0.88em;
+    font-weight: 400;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .nom-sub { font-size: 0.8em; font-weight: 400; }
+  .lin-sub { font-size: 0.8em; font-weight: 400; margin-left: 14px; }
   .total { font-size: 1.2em; font-weight: 700; }
   .vuelto { font-weight: 700; }
   .pie { text-align: center; margin-top: 8px; }

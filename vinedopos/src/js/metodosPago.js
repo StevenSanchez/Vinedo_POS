@@ -1,98 +1,196 @@
 /**
  * ============================================================================
  * ARCHIVO: src/js/metodosPago.js
- * PROPÓSITO: ABM de métodos de pago (EFECTIVO, SINPE, tarjetas, etc.).
+ * PROPÓSITO: ABM y orden de los métodos de pago.
  *
  * ENDPOINTS:
  *   GET  /metodos-pago/all      listar activos e inactivos
- *   POST /metodos-pago/add      insertar (nombre en MAYÚSCULAS desde el cliente)
+ *   POST /metodos-pago/add      insertar
  *   POST /metodos-pago/update   renombrar
- *   POST /metodos-pago/delete   DESACTIVA (activo = 0), no borra
- *   POST /metodos-pago/activar  reactiva (activo = 1)
+ *   POST /metodos-pago/delete   desactivar (activo = 0)
+ *   POST /metodos-pago/activar  reactivar (activo = 1)
+ *   POST /metodos-pago/orden    guardar el orden (ids en orden)
  *
- * NOTA: el cobro de Pedidos solo ofrece los métodos con activo = 1.
- * El nombre del método se guarda como texto en pagos_factura (snapshot).
+ * El orden guardado se usa al cobrar: los primeros aparecen primero.
  * ============================================================================
  */
 import React from "react";
 import "../css/crud.css";
-import { Navbar, Nav, Container } from "react-bootstrap";
+import "../css/catalogo.css";
+import "../css/metodosPago.css";
+import { Navbar, Nav, Container, Modal, Button, Form } from "react-bootstrap";
 import axios from "axios";
 import Cookies from "universal-cookie";
-import { Button, Modal, ModalBody, ModalHeader } from "reactstrap";
+import Swal from "sweetalert2";
 import { ruta } from "../Ruta/ruta";
-import logo from "../images/logo.png"
+import logo from "../images/logo.png";
+
 const baseUrl = ruta.baseUrl;
 const cookies = new Cookies();
+
+const fueError = (data) =>
+  Boolean(
+    data &&
+      typeof data === "object" &&
+      (data.error || data.sqlMessage || data.errno || data.code)
+  );
 
 class metodosPago extends React.Component {
   state = {
     metodos: [],
-    modalInsert: false,
-    msjModal: "",
-    nombre: "",
+    cargando: true,
+    modal: false,
+    modo: "crear",
     editId: null,
-    editNombre: ""
+    nombre: "",
+    guardando: false,
+    guardandoOrden: false
   };
 
   componentDidMount() {
     if (!cookies.get("idUsuario")) {
       window.location.href = "/login";
-    } else {
-      this.obtenerMetodos();
+      return;
     }
+    this.obtenerMetodos();
   }
 
   obtenerMetodos = async () => {
-    const res = await axios.get(baseUrl + "metodos-pago/all");
-    this.setState({ metodos: res.data || [] });
+    try {
+      const res = await axios.get(baseUrl + "metodos-pago/all");
+      this.setState({ metodos: res.data || [], cargando: false });
+    } catch (e) {
+      this.setState({ cargando: false });
+      Swal.fire("Error", "No se pudieron cargar los métodos de pago.", "error");
+    }
   };
 
-  agregar = async () => {
-    if (this.state.nombre.trim() === "") return;
-    await axios.post(baseUrl + "metodos-pago/add", { nombre: this.state.nombre.toUpperCase() });
-    this.setState({ modalInsert: true, msjModal: "Método de pago agregado", nombre: "" });
-    document.getElementById("mpNombre").value = "";
-    this.obtenerMetodos();
+  abrirCrear = () => {
+    this.setState({ modal: true, modo: "crear", editId: null, nombre: "" });
   };
 
-  editar = (m) => {
-    this.setState({ editId: m.id, editNombre: m.nombre });
+  abrirEditar = (metodo) => {
+    this.setState({
+      modal: true,
+      modo: "editar",
+      editId: metodo.id,
+      nombre: metodo.nombre || ""
+    });
   };
 
-  guardarEditar = async () => {
-    if (!this.state.editId || this.state.editNombre.trim() === "") return;
-    await axios.post(baseUrl + "metodos-pago/update", { id: this.state.editId, nombre: this.state.editNombre.toUpperCase() });
-    this.setState({ modalInsert: true, msjModal: "Método de pago actualizado", editId: null, editNombre: "" });
-    this.obtenerMetodos();
+  cerrarModal = () => {
+    this.setState({ modal: false, guardando: false, editId: null, nombre: "" });
   };
 
-  cancelarEditar = () => {
-    this.setState({ editId: null, editNombre: "" });
+  guardar = async () => {
+    const nombre = (this.state.nombre || "").trim().toUpperCase();
+    if (!nombre) {
+      Swal.fire("Falta el nombre", "Escriba el nombre del método de pago.", "warning");
+      return;
+    }
+    this.setState({ guardando: true });
+    try {
+      const res =
+        this.state.modo === "editar"
+          ? await axios.post(baseUrl + "metodos-pago/update", {
+              id: this.state.editId,
+              nombre
+            })
+          : await axios.post(baseUrl + "metodos-pago/add", { nombre });
+      if (fueError(res.data)) {
+        Swal.fire(
+          "No se pudo guardar",
+          String(res.data.sqlMessage || "").indexOf("Duplicate") >= 0
+            ? "Ya existe un método con ese nombre."
+            : "Revise el nombre e intente de nuevo.",
+          "error"
+        );
+        this.setState({ guardando: false });
+        return;
+      }
+      await this.obtenerMetodos();
+      this.cerrarModal();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: this.state.modo === "editar" ? "Método actualizado" : "Método agregado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      this.setState({ guardando: false });
+      Swal.fire("Error", "No se pudo guardar el método de pago.", "error");
+    }
   };
 
-  eliminar = async (m) => {
-    await axios.post(baseUrl + "metodos-pago/delete", { id: m.id });
-    this.setState({ modalInsert: true, msjModal: "Método de pago desactivado" });
-    this.obtenerMetodos();
+  mover = async (indice, direccion) => {
+    const activos = (this.state.metodos || []).filter((m) => Number(m.activo) === 1);
+    const destino = indice + direccion;
+    if (destino < 0 || destino >= activos.length) return;
+    const nuevos = [...activos];
+    const temporal = nuevos[indice];
+    nuevos[indice] = nuevos[destino];
+    nuevos[destino] = temporal;
+
+    this.setState({ guardandoOrden: true });
+    try {
+      const res = await axios.post(baseUrl + "metodos-pago/orden", {
+        ids: nuevos.map((m) => m.id)
+      });
+      if (fueError(res.data)) throw new Error("respuesta");
+      await this.obtenerMetodos();
+    } catch (e) {
+      Swal.fire("Error", "No se pudo guardar el orden.", "error");
+      await this.obtenerMetodos();
+    } finally {
+      this.setState({ guardandoOrden: false });
+    }
   };
 
-  activar = async (m) => {
-    await axios.post(baseUrl + "metodos-pago/activar", { id: m.id });
-    this.setState({ modalInsert: true, msjModal: "Método de pago activado" });
-    this.obtenerMetodos();
+  desactivar = async (metodo) => {
+    const confirmacion = await Swal.fire({
+      title: "Desactivar método",
+      html: "¿Ocultar <strong>" + (metodo.nombre || "") + "</strong> al cobrar?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Desactivar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280"
+    });
+    if (!confirmacion.isConfirmed) return;
+    try {
+      await axios.post(baseUrl + "metodos-pago/delete", { id: metodo.id });
+      await this.obtenerMetodos();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Método desactivado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      Swal.fire("Error", "No se pudo desactivar el método.", "error");
+    }
   };
 
-  handlechange = (e) => {
-    this.setState({ [e.target.name]: e.target.value });
-  };
-
-  handleEditChange = (e) => {
-    this.setState({ editNombre: e.target.value });
-  };
-
-  ocultarModal = () => {
-    this.setState({ modalInsert: false });
+  activar = async (metodo) => {
+    try {
+      await axios.post(baseUrl + "metodos-pago/activar", { id: metodo.id });
+      await this.obtenerMetodos();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Método activado",
+        showConfirmButton: false,
+        timer: 1500
+      });
+    } catch (e) {
+      Swal.fire("Error", "No se pudo activar el método.", "error");
+    }
   };
 
   cerrarSesion = () => {
@@ -101,39 +199,108 @@ class metodosPago extends React.Component {
     window.location.href = "/login";
   };
 
+  renderFila = (metodo, indice, activo) => (
+    <div className="metodo-fila" key={metodo.id}>
+      <div className="metodo-orden">
+        {activo ? (
+          <>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              title="Subir"
+              aria-label="Subir"
+              disabled={indice === 0 || this.state.guardandoOrden}
+              onClick={() => this.mover(indice, -1)}
+            >
+              <i className="bi bi-chevron-up"></i>
+            </button>
+            <span>{indice + 1}</span>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              title="Bajar"
+              aria-label="Bajar"
+              disabled={
+                indice ===
+                  (this.state.metodos || []).filter((m) => Number(m.activo) === 1).length - 1 ||
+                this.state.guardandoOrden
+              }
+              onClick={() => this.mover(indice, 1)}
+            >
+              <i className="bi bi-chevron-down"></i>
+            </button>
+          </>
+        ) : (
+          <i className="bi bi-dash-circle" style={{ color: "#cbd5e1" }}></i>
+        )}
+      </div>
+      <div className="metodo-nombre">{metodo.nombre}</div>
+      <span className={"metodo-estado " + (activo ? "activo" : "inactivo")}>
+        {activo ? "Activo" : "Inactivo"}
+      </span>
+      <div className="metodo-acciones">
+        <Button size="sm" variant="outline-secondary" onClick={() => this.abrirEditar(metodo)}>
+          <i className="bi bi-pencil"></i> Editar
+        </Button>
+        {activo ? (
+          <Button size="sm" variant="outline-danger" onClick={() => this.desactivar(metodo)}>
+            <i className="bi bi-eye-slash"></i> Desactivar
+          </Button>
+        ) : (
+          <Button size="sm" variant="outline-success" onClick={() => this.activar(metodo)}>
+            <i className="bi bi-arrow-clockwise"></i> Activar
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
   render() {
+    const { metodos, cargando, modal, modo, nombre, guardando, guardandoOrden } = this.state;
+    const activos = (metodos || []).filter((m) => Number(m.activo) === 1);
+    const inactivos = (metodos || []).filter((m) => Number(m.activo) !== 1);
+
     return (
       <div className="App-body">
         <div>
           <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
             <Container>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                 <button id="btNavbar" onClick={() => { window.location.href = "/administracion" }} style={{ padding: "0.3rem 0.7rem" }}>
-                  <i className="bi bi-arrow-left"></i> Volver</button>
-                  <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
-                    <img
-                      src={logo}
-                      alt="Logo ViñedoPos"
-                      width="35"
-                      height="35"
-                      className="d-inline-block align-top"
-                    />
-                    <span>VinedoPos</span>
-                  </Navbar.Brand>
+                <button
+                  className="btnNavbar"
+                  onClick={() => {
+                    window.location.href = "/administracion";
+                  }}
+                  style={{ padding: "0.3rem 0.7rem" }}
+                >
+                  <i className="bi bi-arrow-left"></i> Volver
+                </button>
+                <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
+                  <img
+                    src={logo}
+                    alt="Logo ViñedoPos"
+                    width="35"
+                    height="35"
+                    className="d-inline-block align-top"
+                  />
+                  <span>VinedoPos</span>
+                </Navbar.Brand>
               </div>
-              <Navbar.Toggle aria-controls="responsive-navbar-nav" />
-              <Navbar.Collapse id="responsive-navbar-nav">
+              <Navbar.Toggle aria-controls="metodos-nav" />
+              <Navbar.Collapse id="metodos-nav">
                 <Nav className="me-auto">
                   <Nav.Link href="/administracion">
-                    <button id="btNavbar">Administración</button>
+                    <button className="btnNavbar">Administración</button>
                   </Nav.Link>
                   <Nav.Link href="/mesas">
-                    <button id="btNavbar">Mesas</button>
+                    <button className="btnNavbar">Mesas</button>
                   </Nav.Link>
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                    <button className="btnNavbar" onClick={this.cerrarSesion}>
+                      Cerrar sesión
+                    </button>
                   </Nav.Link>
                 </Nav>
               </Navbar.Collapse>
@@ -141,66 +308,97 @@ class metodosPago extends React.Component {
           </Navbar>
         </div>
 
-        <div className="crud-container">
-          <div className="TablaDatos" style={{ maxWidth: "700px" }}>
-            <h2>Métodos de pago</h2>
-            <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "20px", flexWrap: "wrap" }}>
-              <input id="mpNombre" type="text" className="categoria" placeholder="Nombre (ej. TARJETA BANCO)" name="nombre" onChange={this.handlechange} />
-              <input type="submit" id="confirmar" value="Agregar" onClick={() => this.agregar()} />
+        <div className="config-shell">
+          <div className="config-panel">
+            <div className="config-header">
+              <div>
+                <h2>Métodos de pago</h2>
+                <p className="config-sub">
+                  Ordena los métodos para que los más usados aparezcan primero al cobrar.
+                </p>
+              </div>
+              <div className="config-header-actions">
+                <button type="button" className="btn btn-success btn-lg px-4" onClick={this.abrirCrear}>
+                  <i className="bi bi-plus-lg"></i> Nuevo método
+                </button>
+              </div>
             </div>
-            <hr style={{ marginTop: 30 }} />
-            <table className="table table-hover table-sm" style={{ marginTop: "20px" }}>
-              <thead className="thead-dark">
-                <tr>
-                  <th>Nombre</th>
-                  <th>Estado</th>
-                  <th>Editar</th>
-                  <th>Acción</th>
-                </tr>
-              </thead>
-              <tbody>
-                {this.state.metodos.map((m, index) => (
-                  <tr key={index}>
-                    <td style={{ textAlign: "left" }}>
-                      {this.state.editId === m.id ? (
-                        <input type="text" value={this.state.editNombre} onChange={this.handleEditChange} />
-                      ) : (
-                        m.nombre
-                      )}
-                    </td>
-                    <td>{m.activo === 1 ? "Activo" : "Inactivo"}</td>
-                    <td>
-                      {this.state.editId === m.id ? (
-                        <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
-                          <button className="btn btn-success btn-sm" onClick={this.guardarEditar}><i className="bi bi-check"></i></button>
-                          <button className="btn btn-secondary btn-sm" onClick={this.cancelarEditar}><i className="bi bi-x"></i></button>
-                        </div>
-                      ) : (
-                        <button className="btn btn-primary btn-sm" onClick={() => this.editar(m)}><i className="bi bi-pencil-square"></i></button>
-                      )}
-                    </td>
-                    <td>
-                      {m.activo === 1 ? (
-                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminar(m)}><i className="bi bi-trash"></i></button>
-                      ) : (
-                        <button className="btn btn-success btn-sm" onClick={() => this.activar(m)}><i className="bi bi-arrow-clockwise"></i></button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+            <div className="metodos-ayuda">
+              <i className="bi bi-arrow-down-up"></i>
+              <div>
+                Usa las flechas para cambiar el orden. El primero de la lista será el primero
+                que verás al cobrar en Pedidos.
+                {guardandoOrden ? " Guardando orden..." : ""}
+              </div>
+            </div>
+
+            {cargando ? (
+              <p>Cargando métodos...</p>
+            ) : (
+              <>
+                <h4 className="metodos-subtitulo">
+                  Activos <span className="config-badge">{activos.length}</span>
+                </h4>
+                {activos.length === 0 ? (
+                  <div className="metodos-vacio">
+                    No hay métodos activos. Agrega uno con “Nuevo método”.
+                  </div>
+                ) : (
+                  <div className="metodos-lista">
+                    {activos.map((metodo, indice) => this.renderFila(metodo, indice, true))}
+                  </div>
+                )}
+
+                {inactivos.length > 0 && (
+                  <>
+                    <h4 className="metodos-subtitulo">
+                      Inactivos <span className="config-badge">{inactivos.length}</span>
+                    </h4>
+                    <div className="metodos-lista">
+                      {inactivos.map((metodo, indice) => this.renderFila(metodo, indice, false))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
-        <Modal isOpen={this.state.modalInsert}>
-          <ModalHeader>
-            <div>
-              <h3 style={{ color: "black" }}>{this.state.msjModal}</h3>
-            </div>
-          </ModalHeader>
-          <ModalBody>
-            <Button onClick={() => this.ocultarModal()}>Aceptar</Button>
-          </ModalBody>
+
+        <Modal show={modal} onHide={this.cerrarModal} centered className="catalog-form">
+          <Modal.Header closeButton>
+            <Modal.Title>
+              {modo === "editar" ? "Editar método de pago" : "Nuevo método de pago"}
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form
+              onSubmit={(e) => {
+                e.preventDefault();
+                this.guardar();
+              }}
+            >
+              <Form.Group>
+                <Form.Label>Nombre</Form.Label>
+                <Form.Control
+                  autoFocus
+                  type="text"
+                  value={nombre}
+                  maxLength={50}
+                  placeholder="Ej. TARJETA BAC, SINPE MÓVIL..."
+                  onChange={(e) => this.setState({ nombre: e.target.value })}
+                />
+              </Form.Group>
+            </Form>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={this.cerrarModal}>
+              Cancelar
+            </Button>
+            <Button variant="success" onClick={this.guardar} disabled={guardando}>
+              {guardando ? "Guardando..." : "Guardar"}
+            </Button>
+          </Modal.Footer>
         </Modal>
       </div>
     );

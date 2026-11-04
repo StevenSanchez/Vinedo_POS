@@ -274,10 +274,10 @@ class mesas extends React.Component {
               <Navbar.Collapse id="responsive-navbar-nav">
                 <Nav className="me-auto">
                   <Nav.Link href="/administracion">
-                    <button id="btNavbar" >Administración</button>
+                    <button className="btnNavbar" >Administración</button>
                   </Nav.Link>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.mostrarModal()}>Agregar Mesa</button>
+                    <button className="btnNavbar" onClick={() => this.mostrarModal()}>Agregar Mesa</button>
                   </Nav.Link>
                   <NavDropdown title="Eliminar mesa">
                     {this.state.mesasDB.map((mesa, index) => (
@@ -287,7 +287,7 @@ class mesas extends React.Component {
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                    <button className="btnNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
                   </Nav.Link>
                 </Nav>
               </Navbar.Collapse>
@@ -317,7 +317,7 @@ class mesas extends React.Component {
                 }}
               >
                 <button
-                  id={mesa.botonID}
+                  className={mesa.botonID}
                   style={{ flex: 1, minWidth: 0 }}
                   onClick={() => {
                     if (this.state.dragIndex === null) {

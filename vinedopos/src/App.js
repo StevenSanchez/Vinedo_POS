@@ -33,6 +33,8 @@ import MetodosPago from "./js/metodosPago";
 import Cargos from "./js/cargos";
 import Facturas from "./js/facturas";
 import ConfiguracionTicket from "./js/configuracionTicket";
+import ConfiguracionComanda from "./js/configuracionComanda";
+import ConfiguracionModificadores from "./js/configuracionModificadores";
 import Cierre from "./js/cierre";
 
 export default function App() {
@@ -50,6 +52,8 @@ export default function App() {
         <Route path="/cargos" element={<Cargos />} />
         <Route path="/facturas" element={<Facturas />} />
         <Route path="/configuracionTicket" element={<ConfiguracionTicket />} />
+        <Route path="/configuracionComanda" element={<ConfiguracionComanda />} />
+        <Route path="/configuracionModificadores" element={<ConfiguracionModificadores />} />
         <Route path="/cierre" element={<Cierre />} />
       </Routes>
     </Router>

@@ -56,16 +56,26 @@ const routes = express.Router();
 
 const obtenerIpLocal = () => {
   const interfaces = os.networkInterfaces();
-  for (let nombre in interfaces) {
+  const candidatos = [];
+  for (const nombre of Object.keys(interfaces)) {
     const lista = interfaces[nombre] || [];
-    for (let i = 0; i < lista.length; i++) {
-      const iface = lista[i];
-      if (iface.family === "IPv4" && !iface.internal && iface.address) {
-        return iface.address;
-      }
+    for (const iface of lista) {
+      if (iface.family !== "IPv4" || iface.internal || !iface.address) continue;
+      if (iface.address.startsWith("169.254.")) continue;
+      const clave = String(nombre).toLowerCase();
+      const esVirtual = /(virtualbox|vmware|hyper-v|vethernet|wsl|docker|loopback|tap|tun|vpn|zerotier|tailscale|hamachi|radmin|bluetooth|npcap)/.test(clave);
+      let prioridad = 0;
+      if (/(wi-?fi|wifi|wireless|wlan|inal[aá]mbrica)/.test(clave)) prioridad += 100;
+      else if (/(ethernet|eth|lan)/.test(clave)) prioridad += 80;
+      if (/^192\.168\./.test(iface.address)) prioridad += 30;
+      else if (/^10\./.test(iface.address)) prioridad += 20;
+      else if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(iface.address)) prioridad += 10;
+      if (esVirtual) prioridad -= 500;
+      candidatos.push({ ip: iface.address, prioridad, nombre });
     }
   }
-  return "localhost";
+  candidatos.sort((a, b) => b.prioridad - a.prioridad);
+  return candidatos.length > 0 ? candidatos[0].ip : "localhost";
 };
 
 routes.get("/red/ip", (req, res) => {
@@ -222,6 +232,27 @@ const leerMetodosCierre = async (consultar, facturaIDs) => {
   return normalizarMetodosCierre(pagos, activos);
 };
 
+const leerAperturaActiva = async (consultar) => {
+  const filas = await consultar(
+    `SELECT a.AperturaID, a.monto, a.fecha, a.usuario_id,
+            COALESCE(u.usuario, a.usuario) AS usuario
+     FROM caja_apertura a
+     LEFT JOIN usuario u ON u.idUsuario = a.usuario_id
+     WHERE a.activa = 1
+     ORDER BY a.AperturaID DESC
+     LIMIT 1`
+  );
+  const apertura = filas && filas[0];
+  if (!apertura) return null;
+  return {
+    AperturaID: Number(apertura.AperturaID),
+    monto: redondearMoneda(apertura.monto),
+    fecha: apertura.fecha,
+    usuario_id: apertura.usuario_id,
+    usuario: apertura.usuario || null
+  };
+};
+
 const leerCierreCaja = async (consultar, cierreID) => {
   const cabeceraRes = await consultar(
     `SELECT c.*, u.usuario AS Usuario
@@ -257,7 +288,11 @@ const leerCierreCaja = async (consultar, cierreID) => {
     Total: redondearMoneda(cabecera.total),
     EfectivoRecibido: redondearMoneda(cabecera.efectivo_recibido),
     Vuelto: redondearMoneda(cabecera.vuelto),
+    EfectivoInicial: redondearMoneda(cabecera.efectivo_inicial),
     EfectivoNeto: redondearMoneda(cabecera.efectivo_neto),
+    EfectivoEsperado: redondearMoneda(
+      Number(cabecera.efectivo_inicial || 0) + Number(cabecera.efectivo_neto || 0)
+    ),
     EfectivoContado:
       cabecera.efectivo_contado === null ? null : redondearMoneda(cabecera.efectivo_contado),
     Diferencia:
@@ -535,7 +570,9 @@ routes.post("/factura/previus/", (req, res) => {
     } else {
       conn.query(
         `SELECT lf.LineaFacturaID, lf.ProductoID AS codigo, lf.FacturaID, lf.Cantidad, lf.Subtotal,
-                COALESCE(lf.Precio, p.precio) AS Precio, p.nombre AS Nombre
+                lf.Nota,
+                COALESCE(lf.Precio, p.precio) AS Precio, p.nombre AS Nombre, p.idCategoria,
+                p.precio AS PrecioBase
          FROM lineafactura lf
          JOIN producto p ON lf.ProductoID = p.codigo
          WHERE lf.FacturaID = ?
@@ -545,7 +582,33 @@ routes.post("/factura/previus/", (req, res) => {
           if (err) {
             return res.send(err)
           } else {
-            res.json(lineas)
+            const lista = lineas || []
+            if (lista.length === 0) return res.json(lista)
+            const ids = lista.map((l) => l.LineaFacturaID)
+            conn.query(
+              `SELECT DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra
+               FROM factura_detalle_modificador
+               WHERE DetalleID IN (?)
+               ORDER BY ID`,
+              [ids],
+              (err2, mods) => {
+                if (err2) {
+                  console.log(err2)
+                  return res.json(lista)
+                }
+                const porLinea = {}
+                ;(mods || []).forEach((m) => {
+                  if (!porLinea[m.DetalleID]) porLinea[m.DetalleID] = []
+                  porLinea[m.DetalleID].push(m)
+                })
+                res.json(
+                  lista.map((l) => ({
+                    ...l,
+                    Modificadores: porLinea[l.LineaFacturaID] || []
+                  }))
+                )
+              }
+            )
           }
         }
       )
@@ -640,6 +703,25 @@ routes.get("/categorias/", (req, res) => {
 });
 
 //---------Productos-----------
+//Obtener todos los productos (categoría "Todos" y buscador del pedido)
+routes.get("/productos/todos", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) {
+      return res.send(err);
+    }
+    conn.query(
+      "SELECT * FROM producto ORDER BY idCategoria, nombre",
+      (err, productos) => {
+        if (err) {
+          console.log(err);
+          return res.send(err);
+        }
+        res.json(productos || []);
+      }
+    );
+  });
+});
+
 //Obtener productos
 routes.post("/productos/", (req, res) => {
   req.getConnection((err, conn) => {
@@ -804,72 +886,112 @@ routes.get("/factura/cuentas/:mesaID", (req, res) => {
 });
 //Pagar factura con uno o varios metodos de pago
 routes.post("/factura/pagar/", (req, res) => {
-  req.getConnection((err, conn) => {
+  req.getConnection(async (err, conn) => {
     if (err) {
       return res.send(err);
     }
-    const { FacturaID, pagos = [], usuario_id = null, vuelto = 0, Total } = req.body
-    if (!FacturaID || pagos.length === 0) {
-      return res.status(400).json({ error: "FacturaID y pagos son requeridos" })
+    const consultar = (sql, valores = []) =>
+      new Promise((resolve, reject) => {
+        conn.query(sql, valores, (error, resultado) => {
+          if (error) return reject(error);
+          resolve(resultado);
+        });
+      });
+    const validacion = (mensaje) => {
+      const error = new Error(mensaje);
+      error.status = 400;
+      return error;
+    };
+    const { FacturaID, pagos = [], usuario_id = null, Total } = req.body;
+    const facturaID = Number(FacturaID);
+    if (!facturaID) {
+      return res.status(400).json({ error: "FacturaID es requerido." });
     }
-    let totalPagado = 0
-    pagos.forEach(p => {
-      totalPagado += parseFloat(p.monto || 0)
-    })
-    const totalFactura = parseFloat(Total || 0)
-    if (totalPagado < totalFactura - 0.01) {
-      return res.status(400).json({ error: "El monto pagado es menor al total" })
+    const pagosLimpios = (Array.isArray(pagos) ? pagos : [])
+      .map((pago) => ({
+        metodo_pago: (pago.metodo_pago || "EFECTIVO").toString(),
+        monto: redondearMoneda(pago.monto),
+        referencia: pago.referencia ? pago.referencia.toString().slice(0, 100) : null
+      }))
+      .filter((pago) => pago.monto > 0);
+    if (pagosLimpios.length === 0) {
+      return res.status(400).json({ error: "Debe registrar al menos un pago." });
     }
-    conn.query(
-      "SELECT COUNT(*) AS Pagadas FROM pagos_factura WHERE FacturaID = ? AND parte IS NOT NULL",
-      [FacturaID],
-      (errDiv, divisionRes) => {
-        if (errDiv) {
-          console.log(errDiv)
-          return res.send(errDiv)
-        }
-        if (divisionRes && divisionRes[0] && Number(divisionRes[0].Pagadas) > 0) {
-          return res.status(400).json({
-            error: "La cuenta está en división. Continúe cobrando las partes pendientes."
-          })
-        }
-        conn.query(
-          "UPDATE factura SET estado=0, fecha_cierre=NOW(), usuario_cobro=?, vuelto=?, Total=? WHERE FacturaID=?",
-          [usuario_id, vuelto || (totalPagado - totalFactura), totalFactura, FacturaID],
-          (errUpd) => {
-            if (errUpd) {
-              console.log(errUpd)
-              return res.send(errUpd)
-            }
-            let completados = 0
-            let responded = false
-            pagos.forEach((pago) => {
-              conn.query(
-                "INSERT INTO pagos_factura(FacturaID, metodo_pago, monto, usuario_id, referencia) VALUES(?,?,?,?,?)",
-                [FacturaID, pago.metodo_pago || "EFECTIVO", parseFloat(pago.monto || 0), usuario_id, pago.referencia || null],
-                (errPago) => {
-                  if (errPago) {
-                    console.log(errPago)
-                    if (!responded) {
-                      responded = true
-                      return res.send(errPago)
-                    }
-                    return
-                  }
-                  completados++
-                  if (completados === pagos.length && !responded) {
-                    responded = true
-                    res.json({ success: true, FacturaID })
-                  }
-                }
-              )
-            })
-          }
-        )
+    let enTransaccion = false;
+    try {
+      await consultar("START TRANSACTION");
+      enTransaccion = true;
+
+      const facturaRes = await consultar(
+        "SELECT FacturaID, estado FROM factura WHERE FacturaID = ? FOR UPDATE",
+        [facturaID]
+      );
+      const factura = facturaRes && facturaRes[0];
+      if (!factura) throw validacion("La cuenta no existe.");
+      if (Number(factura.estado) !== 1) throw validacion("La cuenta ya está cerrada.");
+
+      const divisionRes = await consultar(
+        "SELECT COUNT(*) AS Pagadas FROM pagos_factura WHERE FacturaID = ? AND parte IS NOT NULL",
+        [facturaID]
+      );
+      if (divisionRes && divisionRes[0] && Number(divisionRes[0].Pagadas) > 0) {
+        throw validacion("La cuenta está en división. Continúe cobrando las partes pendientes.");
       }
-    )
-  })
-})
+
+      const totalInfo = await calcularTotalCuenta(consultar, facturaID);
+      const totalFactura = redondearMoneda(totalInfo.total);
+      if (totalFactura <= 0) throw validacion("La cuenta no tiene saldo por cobrar.");
+      const totalCliente = redondearMoneda(Total);
+      if (Math.abs(totalCliente - totalFactura) > 0.01) {
+        throw validacion(
+          "El total de la cuenta cambió. Cierre e intente abrir el cobro de nuevo."
+        );
+      }
+
+      const totalPagado = pagosLimpios.reduce((acc, pago) => acc + Number(pago.monto || 0), 0);
+      if (totalPagado < totalFactura - 0.01) {
+        throw validacion("El monto pagado es menor al total.");
+      }
+      const efectivoRecibido = pagosLimpios
+        .filter((pago) => String(pago.metodo_pago).toUpperCase() === "EFECTIVO")
+        .reduce((acc, pago) => acc + Number(pago.monto || 0), 0);
+      const excedente = Math.max(0, redondearMoneda(totalPagado - totalFactura));
+      const vueltoCalculado = Math.min(excedente, efectivoRecibido);
+
+      await consultar(
+        "UPDATE factura SET estado=0, fecha_cierre=NOW(), usuario_cobro=?, vuelto=?, Total=? WHERE FacturaID=?",
+        [usuario_id, vueltoCalculado, totalFactura, facturaID]
+      );
+      for (const pago of pagosLimpios) {
+        await consultar(
+          "INSERT INTO pagos_factura(FacturaID, metodo_pago, monto, usuario_id, referencia) VALUES(?,?,?,?,?)",
+          [facturaID, pago.metodo_pago, pago.monto, usuario_id, pago.referencia]
+        );
+      }
+
+      await consultar("COMMIT");
+      enTransaccion = false;
+      res.json({
+        success: true,
+        FacturaID: facturaID,
+        vuelto: vueltoCalculado,
+        total: totalFactura
+      });
+    } catch (error) {
+      if (enTransaccion) {
+        try {
+          await consultar("ROLLBACK");
+        } catch (rollbackError) {
+          console.log(rollbackError);
+        }
+      }
+      console.log(error);
+      return res.status(error.status || 500).json({
+        error: error.status ? error.message : "No se pudo cobrar la factura."
+      });
+    }
+  });
+});
 
 //Cobrar solo una parte de los items de una cuenta y dejar el resto abierto
 routes.post("/factura/cobrar-items/", (req, res) => {
@@ -942,6 +1064,25 @@ routes.post("/factura/cobrar-items/", (req, res) => {
         throw validacion("Una de las líneas seleccionadas ya no existe en la cuenta.");
       }
 
+      // Copiar también guarniciones/términos a la factura parcial, para que
+      // el ticket y una reimpresión desde Facturas muestren lo mismo.
+      const modsPorLinea = {};
+      try {
+        const modsDB = await consultar(
+          `SELECT DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra
+           FROM factura_detalle_modificador
+           WHERE DetalleID IN (?)
+           ORDER BY ID`,
+          [idsLineas]
+        );
+        (modsDB || []).forEach((m) => {
+          if (!modsPorLinea[m.DetalleID]) modsPorLinea[m.DetalleID] = [];
+          modsPorLinea[m.DetalleID].push(m);
+        });
+      } catch (e) {
+        console.log("No se pudieron leer los modificadores de las líneas:", e.code || e.message);
+      }
+
       let baseCobrar = 0;
       const seleccionadas = lineasDB.map((linea) => {
         const cantidadCobrar = solicitados[linea.LineaFacturaID];
@@ -991,7 +1132,8 @@ routes.post("/factura/cobrar-items/", (req, res) => {
       const efectivo = pagosLimpios
         .filter((pago) => String(pago.metodo_pago).toUpperCase() === "EFECTIVO")
         .reduce((acc, pago) => acc + Number(pago.monto || 0), 0);
-      const vuelto = Math.max(0, redondear(efectivo - totalCobrar));
+      const excedente = Math.max(0, redondear(totalPagado - totalCobrar));
+      const vuelto = Math.min(excedente, efectivo);
 
       // Factura parcial ya pagada: conserva mesa, cliente y cargos de la cuenta origen
       const usuarioCobroFinal = (typeof usuarioID === 'object' && usuarioID !== null) ? (usuarioID.idUsuario || usuarioID.usuario_id || usuarioID.id || null) : usuarioID;
@@ -1003,10 +1145,28 @@ routes.post("/factura/cobrar-items/", (req, res) => {
       const nuevaFacturaID = nuevaRes.insertId;
 
       for (const linea of seleccionadas) {
-        await consultar(
+        const nuevaLinea = await consultar(
           "INSERT INTO lineafactura(ProductoID,FacturaID,Cantidad,Precio,Subtotal) VALUES(?,?,?,?,?)",
           [linea.ProductoID, nuevaFacturaID, linea.CantidadCobrar, linea.PrecioUnitario, linea.SubtotalCobrar]
         );
+        const mods = modsPorLinea[linea.LineaFacturaID] || [];
+        for (const m of mods) {
+          await consultar(
+            `INSERT INTO factura_detalle_modificador
+               (DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra)
+             VALUES (?,?,?,?,?,?,?,?)`,
+            [
+              nuevaLinea.insertId,
+              m.ItemID,
+              m.GrupoID,
+              m.GrupoNombre,
+              m.ItemNombre,
+              m.TipoGrupo,
+              m.SoloInterno,
+              m.PrecioExtra
+            ]
+          );
+        }
       }
       for (const pago of pagosLimpios) {
         await consultar(
@@ -1019,6 +1179,10 @@ routes.post("/factura/cobrar-items/", (req, res) => {
       for (const linea of seleccionadas) {
         const cantidadRestante = Number(linea.Cantidad || 0) - linea.CantidadCobrar;
         if (cantidadRestante <= 0) {
+          await consultar(
+            "DELETE FROM factura_detalle_modificador WHERE DetalleID = ?",
+            [linea.LineaFacturaID]
+          );
           await consultar(
             "DELETE FROM lineafactura WHERE LineaFacturaID = ? AND FacturaID = ?",
             [linea.LineaFacturaID, FacturaID]
@@ -1059,6 +1223,10 @@ routes.post("/factura/cobrar-items/", (req, res) => {
           );
         }
         if (!origenQuedaAbierta) {
+          await consultar(
+            "DELETE FROM factura_detalle_modificador WHERE DetalleID IN (SELECT LineaFacturaID FROM lineafactura WHERE FacturaID = ?)",
+            [FacturaID]
+          );
           await consultar("DELETE FROM factura_cargo WHERE FacturaID = ?", [FacturaID]);
           await consultar("DELETE FROM factura WHERE FacturaID = ? AND estado = 1", [FacturaID]);
         }
@@ -1099,7 +1267,8 @@ routes.post("/factura/cobrar-items/", (req, res) => {
             Nombre: linea.Nombre,
             Cantidad: linea.CantidadCobrar,
             Precio: linea.PrecioUnitario,
-            Subtotal: linea.SubtotalCobrar
+            Subtotal: linea.SubtotalCobrar,
+            Modificadores: modsPorLinea[linea.LineaFacturaID] || []
           })),
           cargos: cargosCobrar,
           pagos: pagosLimpios.map((pago) => ({ ...pago }))
@@ -1277,7 +1446,8 @@ routes.post("/factura/pagar-parte/", (req, res) => {
       const efectivoParte = pagosLimpios
         .filter((pago) => String(pago.metodo_pago).toUpperCase() === "EFECTIVO")
         .reduce((acc, pago) => acc + Number(pago.monto || 0), 0);
-      const vueltoParte = Math.max(0, redondearMoneda(efectivoParte - montoParte));
+      const excedenteParte = Math.max(0, redondearMoneda(totalPagado - montoParte));
+      const vueltoParte = Math.min(excedenteParte, efectivoParte);
 
       for (const pago of pagosLimpios) {
         await consultar(
@@ -1305,9 +1475,10 @@ routes.post("/factura/pagar-parte/", (req, res) => {
         // Vuelto real entregado: por cada parte, el efectivo que excedió el
         // monto aplicado de esa parte. Así los pagos mixtos no lo distorsionan.
         const vueltoRes = await consultar(
-          `SELECT COALESCE(SUM(GREATEST(0, efectivo - monto_parte)), 0) AS Vuelto
+          `SELECT COALESCE(SUM(GREATEST(0, LEAST(total_parte - monto_parte, efectivo))), 0) AS Vuelto
            FROM (
              SELECT parte,
+                    SUM(monto) AS total_parte,
                     SUM(CASE WHEN UPPER(metodo_pago) = 'EFECTIVO' THEN monto ELSE 0 END) AS efectivo,
                     MAX(monto_parte) AS monto_parte
              FROM pagos_factura
@@ -1383,7 +1554,7 @@ routes.get("/metodos-pago/", (req, res) => {
     if (err) {
       return res.send(err)
     }
-    conn.query("SELECT * FROM metodos_pago WHERE activo = 1 ORDER BY id", (err, metodos) => {
+    conn.query("SELECT * FROM metodos_pago WHERE activo = 1 ORDER BY orden, id", (err, metodos) => {
       if (err) {
         console.log(err)
         return res.send(err)
@@ -1398,7 +1569,7 @@ routes.get("/metodos-pago/all", (req, res) => {
     if (err) {
       return res.send(err)
     }
-    conn.query("SELECT * FROM metodos_pago ORDER BY id", (err, metodos) => {
+    conn.query("SELECT * FROM metodos_pago ORDER BY activo DESC, orden, id", (err, metodos) => {
       if (err) {
         console.log(err)
         return res.send(err)
@@ -1413,12 +1584,45 @@ routes.post("/metodos-pago/add", (req, res) => {
     if (err) {
       return res.send(err)
     }
-    conn.query("INSERT INTO metodos_pago(nombre) VALUES(?)", [req.body.nombre], (err) => {
-      if (err) {
-        console.log(err)
-        return res.send(err)
+    conn.query("SELECT COALESCE(MAX(orden), 0) + 1 AS siguiente FROM metodos_pago", (errMax, filas) => {
+      if (errMax) {
+        console.log(errMax)
+        return res.send(errMax)
       }
-      res.json("Método de pago registrado")
+      const orden = filas && filas[0] ? Number(filas[0].siguiente) : 1
+      conn.query("INSERT INTO metodos_pago(nombre, orden) VALUES(?,?)", [req.body.nombre, orden], (err) => {
+        if (err) {
+          console.log(err)
+          return res.send(err)
+        }
+        res.json("Método de pago registrado")
+      })
+    })
+  })
+})
+
+// Guarda el orden de los métodos de pago. Body: { ids: [1, 2, 3...] }
+routes.post("/metodos-pago/orden", (req, res) => {
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(req.body.ids) ? req.body.ids : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  )
+  if (ids.length === 0) {
+    return res.status(400).json({ error: "No se recibió ningún método para ordenar." })
+  }
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    const casos = ids.map((id, i) => `WHEN ${id} THEN ${i + 1}`).join(" ")
+    const sql = `UPDATE metodos_pago SET orden = CASE id ${casos} END WHERE id IN (${ids.join(",")})`
+    conn.query(sql, (errUpd) => {
+      if (errUpd) {
+        console.log(errUpd)
+        return res.send(errUpd)
+      }
+      res.json({ success: true, orden: ids })
     })
   })
 })
@@ -1552,45 +1756,76 @@ routes.get("/facturas/detalle/:id", (req, res) => {
           console.log(err)
           return res.send(err)
         }
-        const sqlPagos = `SELECT id_pago, FacturaID, metodo_pago, monto,
-                                 DATE_FORMAT(fecha, '%d/%m/%Y %h:%i %p') as fecha,
-                                 usuario_id, referencia
-                          FROM pagos_factura
-                          WHERE FacturaID = ?
-                          ORDER BY id_pago`
-        conn.query(sqlPagos, [FacturaID], (err, pagos) => {
-          if (err) {
-            console.log(err)
-            return res.send(err)
-          }
-          const sqlCargos = `SELECT idFacturaCargo, FacturaID, idCargo, nombre, porcentaje
-                             FROM factura_cargo
-                             WHERE FacturaID = ?
-                             ORDER BY idFacturaCargo`
-          conn.query(sqlCargos, [FacturaID], (err, cargos) => {
+        const idsLineas = (lineas || []).map((l) => l.LineaFacturaID)
+        const continuar = (lineasConMods) => {
+          const sqlPagos = `SELECT id_pago, FacturaID, metodo_pago, monto,
+                                   DATE_FORMAT(fecha, '%d/%m/%Y %h:%i %p') as fecha,
+                                   usuario_id, referencia
+                            FROM pagos_factura
+                            WHERE FacturaID = ?
+                            ORDER BY id_pago`
+          conn.query(sqlPagos, [FacturaID], (err, pagos) => {
             if (err) {
               console.log(err)
               return res.send(err)
             }
-            const base = (lineas || []).reduce((acc, l) => acc + Number(l.Subtotal || 0), 0)
-            const cargosConMonto = (cargos || []).map((c) => ({
-              ...c,
-              porcentaje: Number(c.porcentaje),
-              monto: Math.round(base * Number(c.porcentaje)) / 100
-            }))
-            const cabeceraFactura = cabecera[0] ? { ...cabecera[0] } : null
-            if (cabeceraFactura && Number(cabeceraFactura.estado) === 1) {
-              const totalCargos = cargosConMonto.reduce((acc, c) => acc + Number(c.monto || 0), 0)
-              cabeceraFactura.Total = Math.round((base + totalCargos) * 100) / 100
-            }
-            res.json({
-              cabecera: cabeceraFactura,
-              lineas: lineas || [],
-              pagos: pagos || [],
-              cargos: cargosConMonto
+            const sqlCargos = `SELECT idFacturaCargo, FacturaID, idCargo, nombre, porcentaje
+                               FROM factura_cargo
+                               WHERE FacturaID = ?
+                               ORDER BY idFacturaCargo`
+            conn.query(sqlCargos, [FacturaID], (err, cargos) => {
+              if (err) {
+                console.log(err)
+                return res.send(err)
+              }
+              const base = (lineasConMods || []).reduce(
+                (acc, l) => acc + Number(l.Subtotal || 0),
+                0
+              )
+              const cargosConMonto = (cargos || []).map((c) => ({
+                ...c,
+                porcentaje: Number(c.porcentaje),
+                monto: Math.round(base * Number(c.porcentaje)) / 100
+              }))
+              const cabeceraFactura = cabecera[0] ? { ...cabecera[0] } : null
+              if (cabeceraFactura && Number(cabeceraFactura.estado) === 1) {
+                const totalCargos = cargosConMonto.reduce((acc, c) => acc + Number(c.monto || 0), 0)
+                cabeceraFactura.Total = Math.round((base + totalCargos) * 100) / 100
+              }
+              res.json({
+                cabecera: cabeceraFactura,
+                lineas: lineasConMods || [],
+                pagos: pagos || [],
+                cargos: cargosConMonto
+              })
             })
           })
-        })
+        }
+        if (idsLineas.length === 0) return continuar(lineas || [])
+        conn.query(
+          `SELECT DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra
+           FROM factura_detalle_modificador
+           WHERE DetalleID IN (?)
+           ORDER BY ID`,
+          [idsLineas],
+          (errMods, mods) => {
+            if (errMods) {
+              console.log(errMods)
+              return continuar(lineas || [])
+            }
+            const porLinea = {}
+            ;(mods || []).forEach((m) => {
+              if (!porLinea[m.DetalleID]) porLinea[m.DetalleID] = []
+              porLinea[m.DetalleID].push(m)
+            })
+            continuar(
+              (lineas || []).map((l) => ({
+                ...l,
+                Modificadores: porLinea[l.LineaFacturaID] || []
+              }))
+            )
+          }
+        )
       })
     })
   })
@@ -1746,12 +1981,15 @@ routes.put("/factura/linea/delete/", (req, res) => {
 //Eliminar linea factura
 routes.post("/linea/delete/", (req, res) => {
   req.getConnection((err, conn) => {
-    conn.query("DELETE FROM lineafactura WHERE LineaFacturaID = ?", [req.body.LineaFacturaID], (err, linea) => {
-      if (err) {
-        return res.send(err)
-      } else {
-        res.json(linea)
-      }
+    const lineaID = req.body.LineaFacturaID
+    conn.query("DELETE FROM factura_detalle_modificador WHERE DetalleID = ?", [lineaID], () => {
+      conn.query("DELETE FROM lineafactura WHERE LineaFacturaID = ?", [lineaID], (err, linea) => {
+        if (err) {
+          return res.send(err)
+        } else {
+          res.json(linea)
+        }
+      })
     })
   })
 })
@@ -1984,26 +2222,32 @@ routes.post("/facturas/eliminar/", (req, res) => {
     if (err) return res.send(err);
     if (!FacturaID) return res.status(400).json({ error: "FacturaID requerido" });
 
-    conn.query("DELETE FROM lineafactura WHERE FacturaID = ?", [FacturaID], (err) => {
-      if (err) return res.send(err);
-
-      conn.query("DELETE FROM pagos_factura WHERE FacturaID = ?", [FacturaID], (err) => {
-        if (err) return res.send(err);
-
-        conn.query("DELETE FROM factura_cargo WHERE FacturaID = ?", [FacturaID], (err) => {
+    conn.query(
+      "DELETE FROM factura_detalle_modificador WHERE DetalleID IN (SELECT LineaFacturaID FROM lineafactura WHERE FacturaID = ?)",
+      [FacturaID],
+      () => {
+        conn.query("DELETE FROM lineafactura WHERE FacturaID = ?", [FacturaID], (err) => {
           if (err) return res.send(err);
 
-          conn.query("DELETE FROM factura WHERE FacturaID = ?", [FacturaID], (err, factura) => {
-            if (err) {
-              console.log(err);
-              return res.send(err);
-            } else {
-              res.json(factura);
-            }
+          conn.query("DELETE FROM pagos_factura WHERE FacturaID = ?", [FacturaID], (err) => {
+            if (err) return res.send(err);
+
+            conn.query("DELETE FROM factura_cargo WHERE FacturaID = ?", [FacturaID], (err) => {
+              if (err) return res.send(err);
+
+              conn.query("DELETE FROM factura WHERE FacturaID = ?", [FacturaID], (err, factura) => {
+                if (err) {
+                  console.log(err);
+                  return res.send(err);
+                } else {
+                  res.json(factura);
+                }
+              });
+            });
           });
         });
-      });
-    });
+      }
+    );
   });
 });
 
@@ -2117,16 +2361,22 @@ routes.post("/facturas/eliminar/por-fechas", (req, res) => {
           const facturaId = ids[i];
           conn.query("DELETE FROM pagos_factura WHERE FacturaID = ?", [facturaId], (err) => {
             if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar pagos en borrado masivo" }));
-            conn.query("DELETE FROM lineafactura WHERE FacturaID = ?", [facturaId], (err) => {
-              if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar líneas en borrado masivo" }));
-              conn.query("DELETE FROM factura_cargo WHERE FacturaID = ?", [facturaId], (err) => {
-                if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar cargos en borrado masivo" }));
-                conn.query("DELETE FROM factura WHERE FacturaID = ?", [facturaId], (err) => {
-                  if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar factura en borrado masivo" }));
-                  borrarEnOrden(i + 1);
+            conn.query(
+              "DELETE FROM factura_detalle_modificador WHERE DetalleID IN (SELECT LineaFacturaID FROM lineafactura WHERE FacturaID = ?)",
+              [facturaId],
+              () => {
+                conn.query("DELETE FROM lineafactura WHERE FacturaID = ?", [facturaId], (err) => {
+                  if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar líneas en borrado masivo" }));
+                  conn.query("DELETE FROM factura_cargo WHERE FacturaID = ?", [facturaId], (err) => {
+                    if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar cargos en borrado masivo" }));
+                    conn.query("DELETE FROM factura WHERE FacturaID = ?", [facturaId], (err) => {
+                      if (err) return conn.rollback(() => res.status(500).json({ error: "Error al eliminar factura en borrado masivo" }));
+                      borrarEnOrden(i + 1);
+                    });
+                  });
                 });
-              });
-            });
+              }
+            );
           });
         };
         borrarEnOrden(0);
@@ -2152,14 +2402,93 @@ routes.get("/cierre/pendientes/", (req, res) => {
       const facturas = await leerFacturasPendientesCierre(consultar);
       const ids = facturas.map((f) => f.FacturaID);
       const metodos = await leerMetodosCierre(consultar, ids);
+      const apertura = await leerAperturaActiva(consultar);
+      const resumen = resumenCierreDesdeFacturas(facturas, metodos);
+      resumen.EfectivoInicial = redondearMoneda(apertura ? apertura.monto : 0);
+      resumen.EfectivoEsperado = redondearMoneda(
+        resumen.EfectivoInicial + resumen.EfectivoNeto
+      );
       res.json({
         Facturas: facturas,
         Metodos: metodos,
-        Resumen: resumenCierreDesdeFacturas(facturas, metodos)
+        Apertura: apertura,
+        Resumen: resumen
       });
     } catch (error) {
       console.log(error);
       res.status(500).json({ error: "No se pudo consultar el cierre de caja." });
+    }
+  });
+});
+
+// Caja abierta actual (monto con el que se abrió el turno).
+routes.get("/caja/apertura", (req, res) => {
+  req.getConnection(async (err, conn) => {
+    if (err) return res.send(err);
+    const consultar = (sql, valores = []) =>
+      new Promise((resolve, reject) => {
+        conn.query(sql, valores, (error, resultado) => {
+          if (error) return reject(error);
+          resolve(resultado);
+        });
+      });
+    try {
+      const apertura = await leerAperturaActiva(consultar);
+      res.json({ Apertura: apertura });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({ error: "No se pudo consultar la apertura de caja." });
+    }
+  });
+});
+
+// Abre la caja para un nuevo turno con un monto inicial.
+routes.post("/caja/apertura", (req, res) => {
+  req.getConnection(async (err, conn) => {
+    if (err) return res.send(err);
+    const consultar = (sql, valores = []) =>
+      new Promise((resolve, reject) => {
+        conn.query(sql, valores, (error, resultado) => {
+          if (error) return reject(error);
+          resolve(resultado);
+        });
+      });
+    const monto = Number(req.body.monto);
+    if (!Number.isFinite(monto) || monto < 0) {
+      return res.status(400).json({
+        error: "El efectivo inicial debe ser un monto válido mayor o igual a cero."
+      });
+    }
+    const usuarioID = Number(req.body.usuario_id) || null;
+    try {
+      const activa = await leerAperturaActiva(consultar);
+      if (activa) {
+        return res.status(400).json({
+          error: "Ya hay una caja abierta con ₡" + activa.monto.toFixed(2) + "."
+        });
+      }
+      let usuarioNombre = null;
+      if (usuarioID) {
+        const usuarioRes = await consultar(
+          "SELECT usuario FROM usuario WHERE idUsuario = ?",
+          [usuarioID]
+        );
+        usuarioNombre = usuarioRes && usuarioRes[0] ? usuarioRes[0].usuario : null;
+      }
+      const creada = await consultar(
+        `INSERT INTO caja_apertura (monto, usuario_id, usuario, fecha, activa)
+         VALUES (?, ?, ?, NOW(), 1)`,
+        [redondearMoneda(monto), usuarioID, usuarioNombre]
+      );
+      const apertura = await leerAperturaActiva(consultar);
+      res.json({
+        ok: true,
+        AperturaID: Number(creada.insertId),
+        Apertura: apertura
+      });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({ error: "No se pudo abrir la caja." });
     }
   });
 });
@@ -2239,19 +2568,29 @@ routes.post("/cierre/", (req, res) => {
           "Algunas facturas ya se cerraron o no están disponibles. Actualice el resumen e intente de nuevo."
         );
       }
+      const aperturaRes = await consultar(
+        `SELECT AperturaID, monto
+         FROM caja_apertura
+         WHERE activa = 1
+         ORDER BY AperturaID DESC
+         LIMIT 1
+         FOR UPDATE`
+      );
+      const apertura = aperturaRes && aperturaRes[0] ? aperturaRes[0] : null;
+      const efectivoInicial = redondearMoneda(apertura ? apertura.monto : 0);
       const metodos = await leerMetodosCierre(consultar, ids);
       const resumen = resumenCierreDesdeFacturas(facturas, metodos);
       const diferencia =
         efectivoContado === null
           ? null
-          : redondearMoneda(efectivoContado - resumen.EfectivoNeto);
+          : redondearMoneda(efectivoContado - (efectivoInicial + resumen.EfectivoNeto));
 
       const creado = await consultar(
         `INSERT INTO cierre_caja
            (fecha, usuario_id, usuario, desde, hasta, facturas, total,
-            efectivo_recibido, vuelto, efectivo_neto, efectivo_contado,
-            diferencia, observaciones)
-         VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            efectivo_recibido, vuelto, efectivo_neto, efectivo_inicial,
+            efectivo_contado, diferencia, observaciones)
+         VALUES (NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           usuarioID,
           usuarioNombre,
@@ -2262,6 +2601,7 @@ routes.post("/cierre/", (req, res) => {
           resumen.EfectivoRecibido,
           resumen.Vuelto,
           resumen.EfectivoNeto,
+          efectivoInicial,
           efectivoContado,
           diferencia,
           observaciones === "" ? null : observaciones
@@ -2303,6 +2643,13 @@ routes.post("/cierre/", (req, res) => {
       if (Number(actualizado.affectedRows) !== ids.length) {
         throw validacion(
           "No se pudieron cerrar todas las facturas. Actualice el resumen e intente de nuevo."
+        );
+      }
+
+      if (apertura) {
+        await consultar(
+          "UPDATE caja_apertura SET activa = 0, CierreID = ? WHERE AperturaID = ? AND activa = 1",
+          [cierreID, apertura.AperturaID]
         );
       }
 
@@ -2355,7 +2702,11 @@ routes.get("/cierre/historial/", (req, res) => {
             Total: redondearMoneda(c.total),
             EfectivoRecibido: redondearMoneda(c.efectivo_recibido),
             Vuelto: redondearMoneda(c.vuelto),
+            EfectivoInicial: redondearMoneda(c.efectivo_inicial),
             EfectivoNeto: redondearMoneda(c.efectivo_neto),
+            EfectivoEsperado: redondearMoneda(
+              Number(c.efectivo_inicial || 0) + Number(c.efectivo_neto || 0)
+            ),
             EfectivoContado:
               c.efectivo_contado === null ? null : redondearMoneda(c.efectivo_contado),
             Diferencia: c.diferencia === null ? null : redondearMoneda(c.diferencia),
@@ -2524,26 +2875,32 @@ routes.post("/Producto/actualizar", (req, res) => {
     if (err) {
       return res.send(err);
     } else {
-      conn.query(
-        "UPDATE producto set nombre = ?, descripcion=?, precio=? WHERE codigo = ?",
-        [
-          req.body.nombre,
-          req.body.descripcion,
-          req.body.precio,
-          req.body.codigo,
-        ],
-        (err, categoriaDB) => {
-          if (err) {
-            return res.send(err);
-          } else {
-            res.json(
-              "El producto " +
+      const idCategoria = Number(req.body.idCategoria || req.body.categoria || 0);
+      const cambiaCategoria = Number.isInteger(idCategoria) && idCategoria > 0;
+      const sql = cambiaCategoria
+        ? "UPDATE producto SET nombre = ?, descripcion = ?, precio = ?, idCategoria = ? WHERE codigo = ?"
+        : "UPDATE producto SET nombre = ?, descripcion = ?, precio = ? WHERE codigo = ?";
+      const valores = cambiaCategoria
+        ? [
+            req.body.nombre,
+            req.body.descripcion,
+            req.body.precio,
+            idCategoria,
+            req.body.codigo,
+          ]
+        : [req.body.nombre, req.body.descripcion, req.body.precio, req.body.codigo];
+      conn.query(sql, valores, (err, categoriaDB) => {
+        if (err) {
+          console.log(err);
+          return res.send(err);
+        } else {
+          res.json(
+            "El producto " +
               req.body.nombre +
               " ha sido modificado exitosamente"
-            );
-          }
+          );
         }
-      );
+      });
     }
   });
 });
@@ -2798,6 +3155,631 @@ routes.post("/factura/cargo/delete", (req, res) => {
       }
       res.json({ ok: true })
     })
+  })
+})
+
+// ------------------- COMANDA DE COCINA -------------------
+// Configuración de comanda
+routes.get("/configuracion/comanda", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query("SELECT * FROM configuracion_comanda WHERE id = 1", (err2, filas) => {
+      if (err2) {
+        console.log(err2)
+        return res.send(err2)
+      }
+      if (filas && filas.length > 0) {
+        return res.json(filas[0])
+      }
+      return res.json({
+        id: 1,
+        titulo: 'COMANDA',
+        ancho_mm: 80,
+        tamano_fuente: 9,
+        mostrar_fecha: 1,
+        mostrar_hora: 1,
+        mostrar_mesa: 1,
+        mostrar_cliente: 1,
+        mostrar_cantidad: 1,
+        mostrar_guarniciones: 1,
+        mostrar_termino: 1,
+        agrupar_por_estacion: 0,
+        leyenda_pie: null
+      })
+    })
+  })
+})
+
+routes.put("/configuracion/comanda", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    const body = req.body || {}
+    const datos = {
+      titulo: (body.titulo || 'COMANDA').toString(),
+      ancho_mm: Number(body.ancho_mm) === 58 ? 58 : 80,
+      tamano_fuente: Math.min(25, Math.max(8, Number(body.tamano_fuente) || 9)),
+      mostrar_fecha: body.mostrar_fecha ? 1 : 0,
+      mostrar_hora: body.mostrar_hora ? 1 : 0,
+      mostrar_mesa: body.mostrar_mesa ? 1 : 0,
+      mostrar_cliente: body.mostrar_cliente ? 1 : 0,
+      mostrar_cantidad: body.mostrar_cantidad ? 1 : 0,
+      mostrar_guarniciones: body.mostrar_guarniciones ? 1 : 0,
+      mostrar_termino: body.mostrar_termino ? 1 : 0,
+      agrupar_por_estacion: body.agrupar_por_estacion ? 1 : 0,
+      leyenda_pie: body.leyenda_pie ? body.leyenda_pie.toString() : null
+    }
+    conn.query(
+      `INSERT INTO configuracion_comanda (id, titulo, ancho_mm, tamano_fuente, mostrar_fecha, mostrar_hora, mostrar_mesa, mostrar_cliente, mostrar_cantidad, mostrar_guarniciones, mostrar_termino, agrupar_por_estacion, leyenda_pie)
+       VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE titulo=VALUES(titulo), ancho_mm=VALUES(ancho_mm), tamano_fuente=VALUES(tamano_fuente), mostrar_fecha=VALUES(mostrar_fecha), mostrar_hora=VALUES(mostrar_hora), mostrar_mesa=VALUES(mostrar_mesa), mostrar_cliente=VALUES(mostrar_cliente), mostrar_cantidad=VALUES(mostrar_cantidad), mostrar_guarniciones=VALUES(mostrar_guarniciones), mostrar_termino=VALUES(mostrar_termino), agrupar_por_estacion=VALUES(agrupar_por_estacion), leyenda_pie=VALUES(leyenda_pie)`,
+      [datos.titulo, datos.ancho_mm, datos.tamano_fuente, datos.mostrar_fecha, datos.mostrar_hora, datos.mostrar_mesa, datos.mostrar_cliente, datos.mostrar_cantidad, datos.mostrar_guarniciones, datos.mostrar_termino, datos.agrupar_por_estacion, datos.leyenda_pie],
+      (err2) => {
+        if (err2) {
+          console.log(err2)
+          return res.send(err2)
+        }
+        res.json({ success: true })
+      }
+    )
+  })
+})
+
+routes.get("/categoria-impresion/cocina", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query(
+      `SELECT c.idCategoria, c.Descripcion, COALESCE(cic.imprimir_cocina,0) AS imprimir_cocina, COALESCE(cic.estacion,'COCINA') AS estacion, COALESCE(cic.orden, c.idCategoria) AS orden
+       FROM categoria c
+       LEFT JOIN categoria_impresion_cocina cic ON cic.idCategoria = c.idCategoria
+       ORDER BY COALESCE(cic.orden, c.idCategoria), c.idCategoria`,
+      (err2, filas) => {
+        if (err2) {
+          console.log(err2)
+          return res.send(err2)
+        }
+        res.json(filas || [])
+      }
+    )
+  })
+})
+
+routes.post("/categoria-impresion/cocina", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    const lista = Array.isArray(req.body.items) ? req.body.items : []
+    if (lista.length === 0) return res.json({ success: true })
+    let completados = 0
+    let responded = false
+    lista.forEach((item) => {
+      const idCategoria = Number(item.idCategoria)
+      if (!idCategoria) {
+        completados++
+        if (completados === lista.length && !responded) { responded = true; return res.json({ success: true }) }
+        return
+      }
+      const imprimir_cocina = item.imprimir_cocina ? 1 : 0
+      const estacion = (item.estacion || 'COCINA').toString()
+      const orden = Number(item.orden) || idCategoria
+      conn.query(
+        `INSERT INTO categoria_impresion_cocina (idCategoria, imprimir_cocina, estacion, orden)
+         VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE imprimir_cocina=VALUES(imprimir_cocina), estacion=VALUES(estacion), orden=VALUES(orden)`,
+        [idCategoria, imprimir_cocina, estacion, orden],
+        (err3) => {
+          if (err3) console.log(err3)
+          completados++
+          if (completados === lista.length && !responded) {
+            responded = true
+            return res.json({ success: true })
+          }
+        }
+      )
+    })
+  })
+})
+
+// ============================================================================
+// Modificadores de línea: guarniciones, términos y otros extras.
+// Configuración: modificador_grupo / modificador_item / modificador_grupo_categoria
+// Selección guardada: factura_detalle_modificador (DetalleID = LineaFacturaID)
+// ============================================================================
+
+// Todos los grupos con sus opciones y las categorías a las que están asignados.
+// Si un grupo tiene categorías de origen, sus opciones son los productos de esas
+// categorías; si no, se usan los ítems manuales (ej. términos).
+routes.get("/modificadores/grupos", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query("SELECT * FROM modificador_grupo ORDER BY Orden, GrupoID", (errG, grupos) => {
+      if (errG) {
+        console.log(errG)
+        return res.send(errG)
+      }
+      conn.query("SELECT * FROM modificador_item ORDER BY Orden, ItemID", (errI, items) => {
+        if (errI) {
+          console.log(errI)
+          return res.send(errI)
+        }
+        conn.query(
+          "SELECT GrupoID, CategoriaID FROM modificador_grupo_categoria",
+          (errM, mapa) => {
+            if (errM) {
+              console.log(errM)
+              return res.send(errM)
+            }
+            conn.query(
+              "SELECT GrupoID, CategoriaID FROM modificador_grupo_categoria_origen",
+              (errO, mapaOrigen) => {
+                if (errO) {
+                  console.log(errO)
+                  return res.send(errO)
+                }
+                const itemsPorGrupo = {}
+                ;(items || []).forEach((i) => {
+                  if (!itemsPorGrupo[i.GrupoID]) itemsPorGrupo[i.GrupoID] = []
+                  itemsPorGrupo[i.GrupoID].push(i)
+                })
+                const categoriasPorGrupo = {}
+                ;(mapa || []).forEach((m) => {
+                  if (!categoriasPorGrupo[m.GrupoID]) categoriasPorGrupo[m.GrupoID] = []
+                  categoriasPorGrupo[m.GrupoID].push(Number(m.CategoriaID))
+                })
+                const origenPorGrupo = {}
+                const categoriasOrigen = new Set()
+                ;(mapaOrigen || []).forEach((m) => {
+                  if (!origenPorGrupo[m.GrupoID]) origenPorGrupo[m.GrupoID] = []
+                  origenPorGrupo[m.GrupoID].push(Number(m.CategoriaID))
+                  categoriasOrigen.add(Number(m.CategoriaID))
+                })
+                const productosPorCategoria = (cb) => {
+                  if (categoriasOrigen.size === 0) return cb(null, {})
+                  conn.query(
+                    `SELECT codigo, nombre, precio, idCategoria
+                     FROM producto WHERE idCategoria IN (?)
+                     ORDER BY nombre`,
+                    [Array.from(categoriasOrigen)],
+                    (errP, productos) => {
+                      if (errP) return cb(errP)
+                      const porCategoria = {}
+                      ;(productos || []).forEach((p) => {
+                        if (!porCategoria[p.idCategoria]) porCategoria[p.idCategoria] = []
+                        porCategoria[p.idCategoria].push(p)
+                      })
+                      cb(null, porCategoria)
+                    }
+                  )
+                }
+                productosPorCategoria((errP, productosPorCategoria) => {
+                  if (errP) {
+                    console.log(errP)
+                    return res.send(errP)
+                  }
+                  res.json(
+                    (grupos || []).map((g) => {
+                      const origen = origenPorGrupo[g.GrupoID] || []
+                      let opciones = itemsPorGrupo[g.GrupoID] || []
+                      if (origen.length > 0) {
+                        opciones = []
+                        origen.forEach((catID) => {
+                          ;(productosPorCategoria[catID] || []).forEach((p) => {
+                            opciones.push({
+                              ItemID: p.codigo,
+                              ProductoID: p.codigo,
+                              idCategoria: p.idCategoria,
+                              Nombre: p.nombre,
+                              PrecioProducto: Number(p.precio) || 0,
+                              PrecioExtra: Number(g.CobrarPrecio) === 1 ? Number(p.precio) || 0 : 0,
+                              Orden: opciones.length + 1,
+                              Activo: 1,
+                              Origen: "producto"
+                            })
+                          })
+                        })
+                      }
+                      return {
+                        ...g,
+                        Items: opciones,
+                        Categorias: categoriasPorGrupo[g.GrupoID] || [],
+                        CategoriasOrigen: origen
+                      }
+                    })
+                  )
+                })
+              }
+            )
+          }
+        )
+      })
+    })
+  })
+})
+
+// Grupos activos asignados a una categoría, con sus opciones activas.
+// Es lo que se muestra al agregar o editar un producto del pedido.
+routes.get("/modificadores/categoria/:idCategoria", (req, res) => {
+  const idCategoria = Number(req.params.idCategoria)
+  if (!Number.isInteger(idCategoria) || idCategoria <= 0) {
+    return res.status(400).json({ error: "Categoría inválida." })
+  }
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query(
+      `SELECT g.*
+       FROM modificador_grupo g
+       JOIN modificador_grupo_categoria mgc ON mgc.GrupoID = g.GrupoID
+       WHERE mgc.CategoriaID = ? AND g.Activo = 1
+       ORDER BY g.Orden, g.GrupoID`,
+      [idCategoria],
+      (errG, grupos) => {
+        if (errG) {
+          console.log(errG)
+          return res.send(errG)
+        }
+        if (!grupos || grupos.length === 0) return res.json([])
+        const ids = grupos.map((g) => g.GrupoID)
+        conn.query(
+          `SELECT GrupoID, CategoriaID FROM modificador_grupo_categoria_origen
+           WHERE GrupoID IN (?)`,
+          [ids],
+          (errO, mapaOrigen) => {
+            if (errO) {
+              console.log(errO)
+              return res.send(errO)
+            }
+            const origenPorGrupo = {}
+            const categoriasOrigen = new Set()
+            ;(mapaOrigen || []).forEach((m) => {
+              if (!origenPorGrupo[m.GrupoID]) origenPorGrupo[m.GrupoID] = []
+              origenPorGrupo[m.GrupoID].push(Number(m.CategoriaID))
+              categoriasOrigen.add(Number(m.CategoriaID))
+            })
+            const gruposManuales = grupos
+              .filter((g) => !(origenPorGrupo[g.GrupoID] || []).length)
+              .map((g) => g.GrupoID)
+            const leerManuales = (cb) => {
+              if (gruposManuales.length === 0) return cb(null, [])
+              conn.query(
+                `SELECT * FROM modificador_item
+                 WHERE GrupoID IN (?) AND Activo = 1
+                 ORDER BY Orden, ItemID`,
+                [gruposManuales],
+                cb
+              )
+            }
+            leerManuales((errI, items) => {
+              if (errI) {
+                console.log(errI)
+                return res.send(errI)
+              }
+              const manualesPorGrupo = {}
+              ;(items || []).forEach((i) => {
+                if (!manualesPorGrupo[i.GrupoID]) manualesPorGrupo[i.GrupoID] = []
+                manualesPorGrupo[i.GrupoID].push(i)
+              })
+              const leerProductos = (cb) => {
+                if (categoriasOrigen.size === 0) return cb(null, {})
+                conn.query(
+                  `SELECT codigo, nombre, precio, idCategoria
+                   FROM producto WHERE idCategoria IN (?)
+                   ORDER BY nombre`,
+                  [Array.from(categoriasOrigen)],
+                  (errP, productos) => {
+                    if (errP) return cb(errP)
+                    const porCategoria = {}
+                    ;(productos || []).forEach((p) => {
+                      if (!porCategoria[p.idCategoria]) porCategoria[p.idCategoria] = []
+                      porCategoria[p.idCategoria].push(p)
+                    })
+                    cb(null, porCategoria)
+                  }
+                )
+              }
+              leerProductos((errP, productosPorCategoria) => {
+                if (errP) {
+                  console.log(errP)
+                  return res.send(errP)
+                }
+                res.json(
+                  grupos.map((g) => {
+                    const origen = origenPorGrupo[g.GrupoID] || []
+                    if (origen.length === 0) {
+                      return { ...g, CategoriasOrigen: [], Items: manualesPorGrupo[g.GrupoID] || [] }
+                    }
+                    const opciones = []
+                    origen.forEach((catID) => {
+                      ;(productosPorCategoria[catID] || []).forEach((p) => {
+                        opciones.push({
+                          ItemID: p.codigo,
+                          ProductoID: p.codigo,
+                          idCategoria: p.idCategoria,
+                          Nombre: p.nombre,
+                          PrecioProducto: Number(p.precio) || 0,
+                          PrecioExtra: Number(g.CobrarPrecio) === 1 ? Number(p.precio) || 0 : 0,
+                          Orden: opciones.length + 1,
+                          Activo: 1,
+                          Origen: "producto"
+                        })
+                      })
+                    })
+                    return { ...g, CategoriasOrigen: origen, Items: opciones }
+                  })
+                )
+              })
+            })
+          }
+        )
+      }
+    )
+  })
+})
+
+// Crear o actualizar un grupo de modificadores, sus categorías destino y sus
+// categorías de origen (de donde se toman los productos como opciones).
+routes.post("/modificadores/grupo", (req, res) => {
+  const body = req.body || {}
+  const nombre = (body.Nombre || "").toString().trim()
+  if (!nombre) return res.status(400).json({ error: "El nombre del grupo es obligatorio." })
+  const tipo =
+    body.Tipo === "checkbox" ? "checkbox" : body.Tipo === "max2" ? "max2" : "radio"
+  const obligatorio = body.Obligatorio ? 1 : 0
+  const soloInterno = body.SoloInterno ? 1 : 0
+  const orden = Number(body.Orden) || 0
+  const activo = body.Activo === undefined ? 1 : body.Activo ? 1 : 0
+  const cobrarPrecio = body.CobrarPrecio === undefined ? 1 : body.CobrarPrecio ? 1 : 0
+  const grupoID = Number(body.GrupoID) || 0
+
+  const normalizarCategorias = (valor) =>
+    Array.from(
+      new Set(
+        (Array.isArray(valor) ? valor : [])
+          .map((c) => Number(c))
+          .filter((c) => Number.isInteger(c) && c > 0)
+      )
+    )
+
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+
+    const reemplazarMapa = (tabla, id, categorias, done) => {
+      conn.query(`DELETE FROM ${tabla} WHERE GrupoID = ?`, [id], (errDel) => {
+        if (errDel) return done(errDel)
+        if (categorias.length === 0) return done(null)
+        conn.query(
+          `INSERT INTO ${tabla} (GrupoID, CategoriaID) VALUES ?`,
+          [categorias.map((c) => [id, c])],
+          done
+        )
+      })
+    }
+
+    const guardarMapas = (id) => {
+      const pasos = []
+      if (Array.isArray(body.Categorias)) {
+        const categorias = normalizarCategorias(body.Categorias)
+        pasos.push((done) => reemplazarMapa("modificador_grupo_categoria", id, categorias, done))
+      }
+      if (Array.isArray(body.CategoriasOrigen)) {
+        const origen = normalizarCategorias(body.CategoriasOrigen)
+        pasos.push((done) =>
+          reemplazarMapa("modificador_grupo_categoria_origen", id, origen, done)
+        )
+      }
+      const ejecutar = (i) => {
+        if (i >= pasos.length) return res.json({ success: true, GrupoID: id })
+        pasos[i]((e) => {
+          if (e) {
+            console.log(e)
+            return res.send(e)
+          }
+          ejecutar(i + 1)
+        })
+      }
+      ejecutar(0)
+    }
+
+    if (grupoID) {
+      conn.query(
+        `UPDATE modificador_grupo
+         SET Nombre = ?, Tipo = ?, Obligatorio = ?, SoloInterno = ?, Orden = ?, Activo = ?,
+             CobrarPrecio = ?
+         WHERE GrupoID = ?`,
+        [nombre, tipo, obligatorio, soloInterno, orden, activo, cobrarPrecio, grupoID],
+        (errUpd) => {
+          if (errUpd) {
+            console.log(errUpd)
+            return res.send(errUpd)
+          }
+          guardarMapas(grupoID)
+        }
+      )
+      return
+    }
+
+    conn.query(
+      `INSERT INTO modificador_grupo
+         (Nombre, Tipo, Obligatorio, SoloInterno, Orden, Activo, CobrarPrecio)
+       VALUES (?,?,?,?,?,?,?)`,
+      [nombre, tipo, obligatorio, soloInterno, orden, activo, cobrarPrecio],
+      (errIns, resultado) => {
+        if (errIns) {
+          console.log(errIns)
+          return res.send(errIns)
+        }
+        guardarMapas(Number(resultado.insertId))
+      }
+    )
+  })
+})
+
+// Eliminar un grupo (sus ítems y asignaciones se borran en cascada).
+routes.post("/modificadores/grupo/delete", (req, res) => {
+  const grupoID = Number(req.body.GrupoID)
+  if (!Number.isInteger(grupoID) || grupoID <= 0) {
+    return res.status(400).json({ error: "Grupo inválido." })
+  }
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query("DELETE FROM modificador_grupo WHERE GrupoID = ?", [grupoID], (errDel) => {
+      if (errDel) {
+        console.log(errDel)
+        return res.send(errDel)
+      }
+      res.json({ success: true })
+    })
+  })
+})
+
+// Crear o actualizar un ítem de un grupo.
+routes.post("/modificadores/item", (req, res) => {
+  const body = req.body || {}
+  const grupoID = Number(body.GrupoID)
+  const nombre = (body.Nombre || "").toString().trim()
+  if (!Number.isInteger(grupoID) || grupoID <= 0) {
+    return res.status(400).json({ error: "Grupo inválido." })
+  }
+  if (!nombre) return res.status(400).json({ error: "El nombre del ítem es obligatorio." })
+  const precioExtra = Number(body.PrecioExtra) || 0
+  const orden = Number(body.Orden) || 0
+  const itemID = Number(body.ItemID) || 0
+
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    if (itemID) {
+      conn.query(
+        `UPDATE modificador_item SET Nombre = ?, PrecioExtra = ?, Orden = ? WHERE ItemID = ?`,
+        [nombre, precioExtra, orden, itemID],
+        (errUpd) => {
+          if (errUpd) {
+            console.log(errUpd)
+            return res.send(errUpd)
+          }
+          res.json({ success: true, ItemID: itemID })
+        }
+      )
+      return
+    }
+    conn.query(
+      "INSERT INTO modificador_item (GrupoID, Nombre, PrecioExtra, Orden, Activo) VALUES (?,?,?,?,1)",
+      [grupoID, nombre, precioExtra, orden],
+      (errIns, resultado) => {
+        if (errIns) {
+          console.log(errIns)
+          return res.send(errIns)
+        }
+        res.json({ success: true, ItemID: Number(resultado.insertId) })
+      }
+    )
+  })
+})
+
+// Eliminar un ítem.
+routes.post("/modificadores/item/delete", (req, res) => {
+  const itemID = Number(req.body.ItemID)
+  if (!Number.isInteger(itemID) || itemID <= 0) {
+    return res.status(400).json({ error: "Ítem inválido." })
+  }
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query("DELETE FROM modificador_item WHERE ItemID = ?", [itemID], (errDel) => {
+      if (errDel) {
+        console.log(errDel)
+        return res.send(errDel)
+      }
+      res.json({ success: true })
+    })
+  })
+})
+
+// Selección guardada de una línea.
+routes.get("/linea/:id/modificadores", (req, res) => {
+  const lineaID = Number(req.params.id)
+  if (!Number.isInteger(lineaID) || lineaID <= 0) {
+    return res.status(400).json({ error: "Línea inválida." })
+  }
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query(
+      `SELECT DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra
+       FROM factura_detalle_modificador WHERE DetalleID = ? ORDER BY ID`,
+      [lineaID],
+      (errQ, filas) => {
+        if (errQ) {
+          console.log(errQ)
+          return res.send(errQ)
+        }
+        res.json(filas || [])
+      }
+    )
+  })
+})
+
+// Reemplaza la selección de modificadores de una línea.
+routes.post("/linea/modificadores", (req, res) => {
+  const body = req.body || {}
+  const lineaID = Number(body.LineaFacturaID)
+  if (!Number.isInteger(lineaID) || lineaID <= 0) {
+    return res.status(400).json({ error: "Línea inválida." })
+  }
+  const seleccion = Array.isArray(body.Modificadores) ? body.Modificadores : []
+  const tieneNota = Object.prototype.hasOwnProperty.call(body, "Nota")
+  const nota = tieneNota ? (body.Nota || "").toString().trim().slice(0, 255) : ""
+
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err)
+    conn.query(
+      "DELETE FROM factura_detalle_modificador WHERE DetalleID = ?",
+      [lineaID],
+      (errDel) => {
+        if (errDel) {
+          console.log(errDel)
+          return res.send(errDel)
+        }
+        const filas = seleccion
+          .filter((m) => m && (m.ItemNombre || "").toString().trim() !== "")
+          .map((m) => [
+            lineaID,
+            m.ItemID ? Number(m.ItemID) : null,
+            m.GrupoID !== undefined && m.GrupoID !== null ? String(m.GrupoID) : null,
+            (m.GrupoNombre || "").toString().trim() || "Extras",
+            m.ItemNombre.toString().trim(),
+            m.TipoGrupo === "checkbox" ? "checkbox" : "radio",
+            m.SoloInterno ? 1 : 0,
+            Number(m.PrecioExtra) || 0
+          ])
+
+        const guardarNota = (guardados) => {
+          if (!tieneNota) {
+            return res.json({ success: true, guardados })
+          }
+          conn.query(
+            "UPDATE lineafactura SET Nota = ? WHERE LineaFacturaID = ?",
+            [nota === "" ? null : nota, lineaID],
+            (errNota) => {
+              if (errNota) {
+                console.log(errNota)
+                return res.send(errNota)
+              }
+              res.json({ success: true, guardados, Nota: nota })
+            }
+          )
+        }
+
+        if (filas.length === 0) return guardarNota(0)
+        conn.query(
+          `INSERT INTO factura_detalle_modificador
+             (DetalleID, ItemID, GrupoID, GrupoNombre, ItemNombre, TipoGrupo, SoloInterno, PrecioExtra)
+           VALUES ?`,
+          [filas],
+          (errIns) => {
+            if (errIns) {
+              console.log(errIns)
+              return res.send(errIns)
+            }
+            guardarNota(filas.length)
+          }
+        )
+      }
+    )
   })
 })
 

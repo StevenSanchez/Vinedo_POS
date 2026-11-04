@@ -52,7 +52,7 @@ body {
   border: 1px solid rgba(15, 23, 42, 0.05);
 }
 
-#btMesa {
+.btMesa {
   font-family: "Noto Serif";
   font-size: 18px;
   font-weight: 600;
@@ -70,17 +70,17 @@ body {
   position: relative;
 }
 
-#btMesa:hover {
+.btMesa:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 22px rgba(34, 197, 94, 0.24);
 }
 
-#btMesa:active {
+.btMesa:active {
   transform: translateY(0);
   box-shadow: 0 6px 14px rgba(34, 197, 94, 0.18);
 }
 
-#btMesaUse {
+.btMesaUse {
   font-family: "Noto Serif";
   font-size: 18px;
   font-weight: 600;
@@ -98,17 +98,17 @@ body {
   position: relative;
 }
 
-#btMesaUse:hover {
+.btMesaUse:hover {
   transform: translateY(-2px);
   box-shadow: 0 10px 22px rgba(239, 68, 68, 0.26);
 }
 
-#btMesaUse:active {
+.btMesaUse:active {
   transform: translateY(0);
   box-shadow: 0 6px 14px rgba(239, 68, 68, 0.2);
 }
 
-#btNavbar {
+.btnNavbar {
   background: none;
   border: none;
   color: white;
@@ -146,8 +146,8 @@ body {
     border-radius: 12px;
   }
 
-  #btMesa,
-  #btMesaUse {
+  .btMesa,
+  .btMesaUse {
     height: 78px;
     font-size: 16px;
     border-radius: 10px;
@@ -212,8 +212,8 @@ body {
     padding: 14px;
   }
 
-  #btMesa,
-  #btMesaUse {
+  .btMesa,
+  .btMesaUse {
     height: 72px;
     font-size: 15px;
   }

@@ -56,17 +56,67 @@ import 'bootstrap-icons/font/bootstrap-icons.css';
 import axios from "axios";
 import Cookies from 'universal-cookie';
 import Swal from "sweetalert2";
-import { Navbar, Nav, Container, Modal, Button, Form, Row, Col } from 'react-bootstrap'
+import { Navbar, Nav, Container, Modal, Button, Form } from 'react-bootstrap'
 import Table from 'react-bootstrap/Table'
 import { ruta } from "../Ruta/ruta"
-import { construirTicketHTML, datosDesdeDetalle, fechaHoraActual, imprimirTicket, obtenerConfigTicket, montoCargo } from "./ticket"
+import { construirTicketHTML, datosDesdeDetalle, fechaHoraActual, imprimirTicket, obtenerConfigTicket, montoCargo, guarnicionesTicket } from "./ticket"
 import logo from "../images/logo.png"
 const baseUrl = ruta.baseUrl;
 const cookies = new Cookies();
 
+const escapar = (texto) =>
+  String(texto === null || texto === undefined ? "" : texto)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+const lineasDeTexto = (texto) =>
+  String(texto || "")
+    .split("\n")
+    .map((linea) => linea.trim())
+    .filter((linea) => linea !== "");
+
+// Un producto con opciones (guarniciones/términos) no se fusiona con otra
+// línea igual, para no perder la selección de cada comensal.
+const llevaModificadores = (linea) =>
+  Array.isArray(linea && linea.Modificadores) && linea.Modificadores.length > 0;
+
+// Vuelto correcto en pagos mixtos: el excedente solo puede devolverse en
+// efectivo. Ej.: total 10.000; tarjeta 5.000 + efectivo 6.000 -> vuelto 1.000.
+const vueltoDePagos = (pagos, total) => {
+  let efectivo = 0;
+  let pagado = 0;
+  (pagos || []).forEach((pago) => {
+    const monto = Number(pago && pago.monto) || 0;
+    if (monto <= 0) return;
+    pagado += monto;
+    if (String(pago.metodo_pago || "").toUpperCase() === "EFECTIVO") {
+      efectivo += monto;
+    }
+  });
+  const excedente = Math.max(0, pagado - (Number(total) || 0));
+  return Math.round(Math.min(excedente, efectivo) * 100) / 100;
+};
+
+const validarPagos = (pagos) => {
+  for (const pago of pagos || []) {
+    if (!pago || !pago.metodo_pago) {
+      return "Seleccione el método de pago en todas las filas.";
+    }
+    const monto = Number(pago.monto);
+    if (Number.isNaN(monto) || monto < 0) {
+      return "Los montos de pago no pueden ser negativos.";
+    }
+  }
+  return "";
+};
+
 class pedidos extends React.Component {
   state = {
     productosBD: [],
+    productosTodos: [],
+    busquedaProducto: "",
     categoriasBD: [],
     factura: [],
     mesaActual: "",
@@ -77,11 +127,29 @@ class pedidos extends React.Component {
     cargosDisponibles: [],
     cargosAplicados: [],
     configTicket: null,
+    configComanda: null,
+    categoriasCocina: [],
+    categoriasConOpciones: [],
     showCartModal: false,
     categoriaSeleccionada: 0,
+    catPuedeIzq: false,
+    catPuedeDer: false,
+    nombreCuentaModal: false,
+    nombreCuentaTitulo: "",
+    nombreCuentaValor: "",
+    nombreCuentaError: "",
+    nombreCuentaExceptoID: 0,
+    showModModal: false,
+    modProducto: null,
+    modLinea: null,
+    modGrupos: [],
+    modSeleccion: {},
+    modNota: "",
+    modGuardando: false,
     showPayModal: false,
     pagos: [{ metodo_pago: 'EFECTIVO', monto: 0, referencia: '' }],
     vuelto: 0,
+    cobrando: false,
     metodosPago: [
       { id: 1, nombre: 'EFECTIVO' },
       { id: 2, nombre: 'TARJETA' },
@@ -103,6 +171,8 @@ class pedidos extends React.Component {
     mesasDisponibles: []
   }
   listaFacturaRef = React.createRef()
+  categoriasRef = React.createRef()
+  nombreCuentaInputRef = React.createRef()
   scrollListaFactura = (direccion) => {
     const el = this.listaFacturaRef.current
     if (!el) return
@@ -140,7 +210,7 @@ class pedidos extends React.Component {
       showCartModal: false,
       division,
       total: division.total || this.state.total,
-      pagos: [{ metodo_pago: 'EFECTIVO', monto: division.montoParte, referencia: '' }],
+      pagos: [{ metodo_pago: this.metodoInicial(), monto: division.montoParte, referencia: '' }],
       vuelto: 0,
       cobrandoParte: false
     })
@@ -149,6 +219,14 @@ class pedidos extends React.Component {
     const facturaID = this.idFacturaActual()
     if (!facturaID) {
       Swal.fire("Cuenta vacía", "Agregue productos antes de dividir.", "info")
+      return
+    }
+    if ((this.state.metodosPago || []).length === 0) {
+      Swal.fire(
+        "Sin métodos de pago",
+        "Active al menos un método de pago en Administración.",
+        "warning"
+      )
       return
     }
     let datos = null
@@ -196,19 +274,28 @@ class pedidos extends React.Component {
     if (!facturaID || !division) return
     if (this.state.cobrandoParte) return
     const montoParte = Number(division.montoParte || 0)
-    let totalPagado = 0
-    this.state.pagos.forEach(p => {
-      totalPagado += parseFloat(p.monto || 0)
-    })
+    const errorPagos = validarPagos(this.state.pagos)
+    if (errorPagos) {
+      Swal.fire("Pago inválido", errorPagos, "warning")
+      return
+    }
+    const pagosLimpios = this.state.pagos
+      .map((pago) => ({ ...pago, monto: this.redondear2(pago.monto) }))
+      .filter((pago) => pago.monto > 0)
+    if (pagosLimpios.length === 0) {
+      Swal.fire("Sin pagos", "Registre al menos un pago.", "warning")
+      return
+    }
+    const totalPagado = pagosLimpios.reduce((acc, pago) => acc + pago.monto, 0)
     if (totalPagado < montoParte - 0.01) {
       Swal.fire(
         "Monto insuficiente",
-        "La parte " + division.siguienteParte + " es de ₡ " + montoParte + ".",
+        "La parte " + division.siguienteParte + " es de ₡ " + montoParte +
+          ". Falta ₡ " + this.redondear2(montoParte - totalPagado) + ".",
         "warning"
       )
       return
     }
-    const pagosLimpios = this.state.pagos.filter(p => parseFloat(p.monto || 0) > 0)
     this.setState({ cobrandoParte: true })
     try {
       const res = await axios.post(baseUrl + "factura/pagar-parte/", {
@@ -219,7 +306,15 @@ class pedidos extends React.Component {
         usuario_id: cookies.get('idUsuario') || null
       })
       const datos = res.data || {}
-      await this.imprimirTicketParte(datos, datos.pagos || pagosLimpios)
+      try {
+        await this.imprimirTicketParte(datos, datos.pagos || pagosLimpios)
+      } catch (e) {
+        Swal.fire(
+          "Parte registrada",
+          "La parte se cobró, pero no se pudo imprimir el ticket. Puede reimprimir desde Facturas.",
+          "warning"
+        )
+      }
       if (datos.cerrada) {
         this.setState({
           showPayModal: false,
@@ -264,7 +359,7 @@ class pedidos extends React.Component {
         division: nuevaDivision,
         cobrandoParte: false,
         total: nuevaDivision.total,
-        pagos: [{ metodo_pago: 'EFECTIVO', monto: nuevaDivision.montoParte, referencia: '' }],
+        pagos: [{ metodo_pago: this.metodoInicial(), monto: nuevaDivision.montoParte, referencia: '' }],
         vuelto: 0
       })
       await this.cargarCuentas(facturaID)
@@ -286,10 +381,24 @@ class pedidos extends React.Component {
     this.state.division
       ? Number(this.state.division.montoParte || 0)
       : parseFloat(this.state.total || 0)
+
+  metodoInicial = () =>
+    this.state.metodosPago && this.state.metodosPago.length > 0
+      ? this.state.metodosPago[0].nombre
+      : 'EFECTIVO'
+
   abrirCobro = async () => {
     const facturaID = this.idFacturaActual()
     if (!facturaID) {
       Swal.fire("Cuenta vacía", "Agregue productos antes de cobrar.", "info")
+      return
+    }
+    if ((this.state.metodosPago || []).length === 0) {
+      Swal.fire(
+        "Sin métodos de pago",
+        "Active al menos un método de pago en Administración.",
+        "warning"
+      )
       return
     }
     let total = parseFloat(this.state.total || 0)
@@ -307,12 +416,14 @@ class pedidos extends React.Component {
       showCartModal: false,
       division: null,
       total,
-      pagos: [{ metodo_pago: 'EFECTIVO', monto: total, referencia: '' }],
-      vuelto: 0
+      pagos: [{ metodo_pago: this.metodoInicial(), monto: total, referencia: '' }],
+      vuelto: 0,
+      cobrando: false
     })
   }
   cerrarCobro = () => {
-    this.setState({ showPayModal: false, division: null, cobrandoParte: false })
+    if (this.state.cobrando || this.state.cobrandoParte) return
+    this.setState({ showPayModal: false, division: null, cobrandoParte: false, cobrando: false })
   }
   agregarPago = () => {
     let totalPagado = 0
@@ -324,7 +435,7 @@ class pedidos extends React.Component {
       return
     }
     const restante = totalFactura - totalPagado
-    this.setState({ pagos: [...this.state.pagos, { metodo_pago: this.state.metodosPago[1] ? this.state.metodosPago[1].nombre : 'TARJETA', monto: restante > 0 ? restante : 0, referencia: '' }] }, this.calcularVuelto)
+    this.setState({ pagos: [...this.state.pagos, { metodo_pago: this.state.metodosPago[1] ? this.state.metodosPago[1].nombre : this.metodoInicial(), monto: restante > 0 ? restante : 0, referencia: '' }] }, this.calcularVuelto)
   }
   quitarPago = (index) => {
     const pagos = [...this.state.pagos]
@@ -332,20 +443,15 @@ class pedidos extends React.Component {
     this.setState({ pagos }, this.calcularVuelto)
   }
   cambiarPago = (index, campo, valor) => {
-    const pagos = [...this.state.pagos]
-    pagos[index][campo] = valor
+    const pagos = this.state.pagos.map((pago, i) =>
+      i === index ? { ...pago, [campo]: valor } : pago
+    )
     this.setState({ pagos }, this.calcularVuelto)
   }
   calcularVuelto = () => {
-    let totalPagadoEfectivo = 0
-    this.state.pagos.forEach(p => {
-      const metodo = (p.metodo_pago || '').toString().toUpperCase()
-      if (metodo === 'EFECTIVO') {
-        totalPagadoEfectivo += parseFloat(p.monto || 0)
-      }
+    this.setState({
+      vuelto: vueltoDePagos(this.state.pagos, this.objetivoCobro())
     })
-    const vuelto = Math.round((totalPagadoEfectivo - this.objetivoCobro()) * 100) / 100
-    this.setState({ vuelto: vuelto > 0 ? vuelto : 0 })
   }
   setearVacio() {
     this.setState({
@@ -368,26 +474,64 @@ class pedidos extends React.Component {
       itemsVuelto: 0,
       pagosItems: [{ metodo_pago: 'EFECTIVO', monto: 0, referencia: '' }],
       division: null,
+      cobrando: false,
       cobrandoParte: false
     })
   }
+  normalizarBusqueda = (texto) =>
+    String(texto || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim()
+
   cargarCategorias = async () => {
-    await axios.get(baseUrl + "categorias/")
-      .then((res) => {
-        const categorias = res.data || []
+    try {
+      const [resCat, resTodos] = await Promise.all([
+        axios.get(baseUrl + "categorias/"),
+        axios.get(baseUrl + "productos/todos").catch(() => null)
+      ])
+      const categorias = resCat.data || []
+      const todos = resTodos && Array.isArray(resTodos.data) ? resTodos.data : []
+      if (todos.length > 0) {
+        // "Todos" arranca activo, como la casita de Odoo.
         this.setState({
           categoriasBD: categorias,
-          categoriaSeleccionada: categorias.length > 0 ? categorias[0].idCategoria : 0
-        }, () => {
-          if (categorias.length > 0) {
-            this.cargarProductos(categorias[0].idCategoria)
-          }
+          productosTodos: todos,
+          productosBD: todos,
+          categoriaSeleccionada: -1,
+          busquedaProducto: ""
         })
-      })
+      } else {
+        const primera = categorias.length > 0 ? categorias[0].idCategoria : 0
+        this.setState(
+          { categoriasBD: categorias, categoriaSeleccionada: primera },
+          () => {
+            if (primera) this.cargarProductos(primera)
+          }
+        )
+      }
+    } catch (e) {
+      // Si falla la carga inicial no se bloquea la pantalla.
+    }
+  }
+  cargarTodosLosProductos = async () => {
+    this.setState({ categoriaSeleccionada: -1, busquedaProducto: "" })
+    if ((this.state.productosTodos || []).length > 0) {
+      this.setState({ productosBD: this.state.productosTodos })
+      return
+    }
+    try {
+      const res = await axios.get(baseUrl + "productos/todos")
+      const todos = res.data || []
+      this.setState({ productosTodos: todos, productosBD: todos })
+    } catch (e) {
+      // Se conserva lo que ya estaba visible.
+    }
   }
   cargarProductos = async (categoria) => {
     const categoriaElegida = { categoriaID: categoria }
-    this.setState({ categoriaSeleccionada: categoria })
+    this.setState({ categoriaSeleccionada: categoria, busquedaProducto: "" })
     axios.post(baseUrl + "productos/", categoriaElegida)
       .then((res) => {
         this.setState({
@@ -406,6 +550,16 @@ class pedidos extends React.Component {
       window.location.href = "/login"
     } else {
       obtenerConfigTicket().then((configTicket) => this.setState({ configTicket }))
+      axios.get(baseUrl + "configuracion/comanda").then(res => this.setState({ configComanda: res.data || null })).catch(() => {})
+      axios.get(baseUrl + "categoria-impresion/cocina").then(res => this.setState({ categoriasCocina: res.data || [] })).catch(() => {})
+      axios.get(baseUrl + "modificadores/grupos").then(res => {
+        const set = new Set()
+        ;(res.data || []).forEach(g => {
+          if (Number(g.Activo) !== 1) return
+          ;(g.Categorias || []).forEach(c => set.add(Number(c)))
+        })
+        this.setState({ categoriasConOpciones: Array.from(set) })
+      }).catch(() => {})
       this.setState({ mesaActual: cookies.get('MesaID').Nombre })
       this.iniciarCuentas()
       this.cargarCategorias()
@@ -437,6 +591,70 @@ class pedidos extends React.Component {
         }).catch(() => {})
       })
     }
+    window.addEventListener("resize", this.ajustarLayoutPedido)
+  }
+  // Oculta el precio SOLO cuando no cabe en la tarjeta. Evita que se corte
+  // en pantallas donde la grilla de productos queda muy angosta.
+  ajustarPreciosProductos = () => {
+    const tarjetas = document.querySelectorAll(".TablaProductos .btProductoCard")
+    if (tarjetas.length === 0) return
+    const lienzo = this._lienzoMedir || (this._lienzoMedir = document.createElement("canvas"))
+    const contexto = lienzo.getContext("2d")
+    tarjetas.forEach((tarjeta) => {
+      const precio = tarjeta.querySelector(".btProductoPrecio")
+      if (!precio) return
+      precio.classList.remove("precio-oculto")
+      const estilo = window.getComputedStyle(tarjeta)
+      const relleno =
+        (parseFloat(estilo.paddingLeft) || 0) +
+        (parseFloat(estilo.paddingRight) || 0)
+      const disponible = tarjeta.clientWidth - relleno
+      let anchoPrecio = precio.scrollWidth
+      if (contexto) {
+        const estiloPrecio = window.getComputedStyle(precio)
+        contexto.font =
+          estiloPrecio.fontWeight + " " + estiloPrecio.fontSize + " " + estiloPrecio.fontFamily
+        anchoPrecio = Math.max(anchoPrecio, contexto.measureText(precio.textContent || "").width)
+      }
+      if (disponible > 0 && (anchoPrecio > disponible + 1 || disponible < 52)) {
+        precio.classList.add("precio-oculto")
+      }
+    })
+  }
+  actualizarFlechasCategorias = () => {
+    const el = this.categoriasRef.current
+    if (!el) return
+    const maximo = el.scrollWidth - el.clientWidth
+    const izquierda = el.scrollLeft > 30
+    const derecha = maximo > 30 && el.scrollLeft < maximo - 2
+    if (izquierda !== this.state.catPuedeIzq || derecha !== this.state.catPuedeDer) {
+      this.setState({ catPuedeIzq: izquierda, catPuedeDer: derecha })
+    }
+  }
+  moverCategorias = (direccion) => {
+    const el = this.categoriasRef.current
+    if (!el) return
+    const paso = Math.max(110, Math.floor(el.clientWidth * 0.85))
+    el.scrollBy({ left: direccion * paso, behavior: "smooth" })
+    setTimeout(this.actualizarFlechasCategorias, 380)
+  }
+  ajustarLayoutPedido = () => {
+    this.ajustarPreciosProductos()
+    this.actualizarFlechasCategorias()
+  }
+  componentDidUpdate(prevProps, prevState) {
+    if (
+      prevState.productosBD !== this.state.productosBD ||
+      prevState.productosTodos !== this.state.productosTodos ||
+      prevState.busquedaProducto !== this.state.busquedaProducto ||
+      prevState.categoriaSeleccionada !== this.state.categoriaSeleccionada ||
+      prevState.categoriasBD !== this.state.categoriasBD
+    ) {
+      setTimeout(this.ajustarLayoutPedido, 60)
+    }
+  }
+  componentWillUnmount() {
+    window.removeEventListener("resize", this.ajustarLayoutPedido)
   }
   cargarFactura = async (IDFactura) => {
     var Fact = { FacturaID: IDFactura }
@@ -444,15 +662,18 @@ class pedidos extends React.Component {
     const lineasTemp = await axios.post(baseUrl + "factura/previus/", Fact)
     const lineas = lineasTemp.data
     for (let i = 0; i < lineas.length; i++) {
-      var lineaFactura = {
+      var lineaFactura = this.aplicarModificadoresLinea({
         codigo: lineas[i].codigo,
+        idCategoria: lineas[i].idCategoria,
+        PrecioBase: lineas[i].PrecioBase,
         FacturaID: lineas[i].FacturaID,
         Cantidad: lineas[i].Cantidad,
         Subtotal: lineas[i].Subtotal,
         Precio: lineas[i].Precio,
         Nombre: lineas[i].Nombre,
+        Nota: lineas[i].Nota,
         LineaFacturaID: lineas[i].LineaFacturaID
-      }
+      }, lineas[i].Modificadores)
       lista.push(lineaFactura)
     }
     let cargosAplicados = []
@@ -530,30 +751,64 @@ class pedidos extends React.Component {
     )
   }
 
-  pedirNombreCuenta = async (titulo, valorInicial, exceptoID) => {
-    const { value, isConfirmed } = await Swal.fire({
-      title: titulo,
-      input: "text",
-      inputLabel: "Nombre de la cuenta",
-      inputPlaceholder: "Ej. Ana",
-      inputValue: valorInicial || "",
-      showCancelButton: true,
-      confirmButtonText: "Guardar",
-      cancelButtonText: "Cancelar",
-      confirmButtonColor: "#16a34a",
-      cancelButtonColor: "#FF6961",
-      inputValidator: (valor) => {
-        const nombre = (valor || "").trim()
-        if (nombre === "") return "Escriba un nombre para la cuenta"
-        if (nombre.length > 40) return "Máximo 40 caracteres"
-        if (!this.nombreCuentaDisponible(nombre, exceptoID)) {
-          return "Ya existe una cuenta con ese nombre en esta mesa"
-        }
-        return null
-      }
+  pedirNombreCuenta = (titulo, valorInicial, exceptoID) =>
+    new Promise((resolve) => {
+      this.nombreCuentaResolver = resolve
+      this.setState(
+        {
+          nombreCuentaModal: true,
+          nombreCuentaTitulo: titulo,
+          nombreCuentaValor: valorInicial || "",
+          nombreCuentaError: "",
+          nombreCuentaExceptoID: exceptoID || 0
+        },
+        () => this.enfocarNombreCuenta()
+      )
     })
-    if (!isConfirmed) return null
-    return (value || "").trim()
+
+  enfocarNombreCuenta = () => {
+    setTimeout(() => {
+      const input = this.nombreCuentaInputRef.current
+      if (!input) return
+      try {
+        input.focus()
+        input.select()
+      } catch (e) {}
+    }, 120)
+  }
+
+  cerrarNombreCuenta = (valor) => {
+    const resolver = this.nombreCuentaResolver
+    this.nombreCuentaResolver = null
+    this.setState({
+      nombreCuentaModal: false,
+      nombreCuentaTitulo: "",
+      nombreCuentaValor: "",
+      nombreCuentaError: "",
+      nombreCuentaExceptoID: 0
+    })
+    if (resolver) resolver(valor)
+  }
+
+  cambiarNombreCuenta = (e) => {
+    this.setState({ nombreCuentaValor: e.target.value, nombreCuentaError: "" })
+  }
+
+  guardarNombreCuenta = () => {
+    const nombre = (this.state.nombreCuentaValor || "").trim()
+    if (nombre === "") {
+      this.setState({ nombreCuentaError: "Escriba un nombre para la cuenta" })
+      return
+    }
+    if (nombre.length > 40) {
+      this.setState({ nombreCuentaError: "Máximo 40 caracteres" })
+      return
+    }
+    if (!this.nombreCuentaDisponible(nombre, this.state.nombreCuentaExceptoID)) {
+      this.setState({ nombreCuentaError: "Ya existe una cuenta con ese nombre en esta mesa" })
+      return
+    }
+    this.cerrarNombreCuenta(nombre)
   }
 
   seleccionarCuenta = async (cuenta) => {
@@ -708,86 +963,623 @@ class pedidos extends React.Component {
     }
   }
 
-  agregarALista = async (producto) => {
-    const mesaElegida = { MesaID: cookies.get('MesaID').MesaID, NombreMesa: cookies.get('MesaID').Nombre }
-    var lista = this.state.factura
-    if (lista.length === 0) {
-      // Reutilizar la cuenta activa; solo crear una nueva si no hay ninguna
-      let idFactura = this.idFacturaActual()
-      if (!idFactura) {
-        const idFac = await axios.post(baseUrl + "factura/add/", mesaElegida)
-        idFactura = idFac.data[0].ID
-      }
-      const cargosGuardados = await this.guardarCargosPendientes(idFactura)
-      var lineaFactura = {
-        codigo: producto.codigo,
-        FacturaID: idFactura,
-        Cantidad: 1,
-        Subtotal: producto.precio,
-        Precio: producto.precio,
-        Nombre: producto.nombre,
-        LineaFacturaID: 0
-      }
-      const idLineFact = await axios.post(baseUrl + "factura/linea/", lineaFactura)
-      lineaFactura.LineaFacturaID = idLineFact.data[0].ID
-      lista.push(lineaFactura)
-      if (this.state.cliente) {
-        this.guardarCliente(idFactura, this.state.cliente)
-      }
-      const existeCuenta = (this.state.cuentas || []).some(
-        (cuenta) => Number(cuenta.FacturaID) === Number(idFactura)
-      )
-      const cuentasActuales = existeCuenta
-        ? this.state.cuentas
-        : [
-            ...(this.state.cuentas || []),
-            {
-              FacturaID: idFactura,
-              Cliente: this.state.cliente || "",
-              Base: 0,
-              Cargos: 0,
-              Total: 0,
-              Lineas: 0
-            }
-          ]
-      this.setState({
-        idFactura,
-        cuentaActiva: idFactura,
-        cuentas: cuentasActuales,
-        factura: lista,
-        cargosAplicados: cargosGuardados
-      }, () => this.actualizarTotal())
-    } else {
-      let i = -1
-      for (let index = 0; index < lista.length; index++) {
-        if (lista[index].codigo === producto.codigo) {
-          i = index
-        }
-      }
-      if (i !== -1) {
-        lista[i].Cantidad = lista[i].Cantidad + 1
-        lista[i].Subtotal = lista[i].Precio * lista[i].Cantidad
-        this.setState({ factura: lista })
-        this.actualizarTotal()
-        await this.guardarCantidadLinea(lista[i])
-      } else {
-        lineaFactura = {
-          codigo: producto.codigo,
-          FacturaID: this.state.idFactura,
-          Cantidad: 1,
-          Subtotal: producto.precio,
-          Precio: producto.precio,
-          Nombre: producto.nombre,
-          LineaFacturaID: 0
-        }
-        const idLineFact = await axios.post(baseUrl + "factura/linea/", lineaFactura)
-        lineaFactura.LineaFacturaID = idLineFact.data[0].ID
-        lista.push(lineaFactura)
-        this.setState({ factura: lista })
-        this.actualizarTotal()
-      }
+  // Separa los modificadores guardados en lo visible al cliente
+  // (guarniciones) y lo que solo va a cocina (término, etc.).
+  esModificadorInterno = (m) =>
+    Number(m && m.SoloInterno) === 1 ||
+    /t[eé]rmino/i.test(String((m && m.GrupoNombre) || ""))
+
+  aplicarModificadoresLinea = (linea, modificadores) => {
+    const mods = Array.isArray(modificadores) ? modificadores : []
+    const visibles = mods.filter((m) => !this.esModificadorInterno(m))
+    const internos = mods.filter((m) => this.esModificadorInterno(m))
+    return {
+      ...linea,
+      Modificadores: mods,
+      Guarniciones: visibles.map((m) => m.ItemNombre).filter(Boolean),
+      Termino: internos.map((m) => m.ItemNombre).filter(Boolean).join(', ')
     }
   }
+
+  obtenerGruposCategoria = async (idCategoria) => {
+    if (!idCategoria) return []
+    try {
+      const res = await axios.get(baseUrl + "modificadores/categoria/" + idCategoria)
+      return res.data || []
+    } catch (e) {
+      return []
+    }
+  }
+
+  categoriaDeProducto = (codigo) => {
+    const producto =
+      (this.state.productosBD || []).find(
+        (p) => Number(p.codigo) === Number(codigo)
+      ) ||
+      (this.state.productosTodos || []).find(
+        (p) => Number(p.codigo) === Number(codigo)
+      )
+    return producto ? producto.idCategoria : 0
+  }
+
+  seleccionInicial = (grupos) => {
+    const seleccion = {}
+    ;(grupos || []).forEach((grupo) => {
+      const items = grupo.Items || []
+      seleccion[grupo.GrupoID] = []
+      // En un grupo de una sola opción y obligatorio, se sugiere la primera.
+      if (grupo.Tipo === "radio" && Number(grupo.Obligatorio) === 1 && items.length > 0) {
+        seleccion[grupo.GrupoID] = [items[0].ItemID]
+      }
+    })
+    return seleccion
+  }
+
+  seleccionDesdeLinea = (grupos, modificadores) => {
+    const seleccion = {}
+    ;(grupos || []).forEach((grupo) => {
+      seleccion[grupo.GrupoID] = []
+    })
+    ;(modificadores || []).forEach((mod) => {
+      const grupo = (grupos || []).find(
+        (g) =>
+          String(g.GrupoID) === String(mod.GrupoID) ||
+          String(g.Nombre).toUpperCase() === String(mod.GrupoNombre || "").toUpperCase()
+      )
+      if (!grupo) return
+      const item = (grupo.Items || []).find(
+        (it) =>
+          (mod.ItemID && Number(it.ItemID) === Number(mod.ItemID)) ||
+          String(it.Nombre).toUpperCase() === String(mod.ItemNombre || "").toUpperCase()
+      )
+      if (item && !seleccion[grupo.GrupoID].includes(item.ItemID)) {
+        seleccion[grupo.GrupoID].push(item.ItemID)
+      }
+    })
+    return seleccion
+  }
+
+  cambiarSeleccionMod = (grupo, itemID) => {
+    const seleccion = { ...this.state.modSeleccion }
+    const actuales = seleccion[grupo.GrupoID] || []
+    if (grupo.Tipo === "radio") {
+      seleccion[grupo.GrupoID] = actuales.includes(itemID) ? [] : [itemID]
+    } else if (grupo.Tipo === "max2") {
+      if (actuales.includes(itemID)) {
+        seleccion[grupo.GrupoID] = actuales.filter((id) => id !== itemID)
+      } else {
+        if (actuales.length >= 2) {
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "info",
+            title: 'Máximo 2 opciones en "' + grupo.Nombre + '"',
+            showConfirmButton: false,
+            timer: 1800
+          })
+          return
+        }
+        seleccion[grupo.GrupoID] = [...actuales, itemID]
+      }
+    } else {
+      seleccion[grupo.GrupoID] = actuales.includes(itemID)
+        ? actuales.filter((id) => id !== itemID)
+        : [...actuales, itemID]
+    }
+    this.setState({ modSeleccion: seleccion })
+  }
+
+  seleccionAModificadores = (grupos, seleccion) => {
+    const salida = []
+    ;(grupos || []).forEach((grupo) => {
+      const elegidos = seleccion[grupo.GrupoID] || []
+      ;(grupo.Items || []).forEach((item) => {
+        if (elegidos.includes(item.ItemID)) {
+          salida.push({
+            GrupoID: grupo.GrupoID,
+            GrupoNombre: grupo.Nombre,
+            ItemID: item.ItemID,
+            ItemNombre: item.Nombre,
+            TipoGrupo: grupo.Tipo === "radio" ? "radio" : "checkbox",
+            SoloInterno: grupo.SoloInterno ? 1 : 0,
+            PrecioExtra: Number(item.PrecioExtra) || 0
+          })
+        }
+      })
+    })
+    return salida
+  }
+
+  agregarALista = async (producto) => {
+    if (!producto) return
+    // El botón "+" de una línea ya existente sólo incrementa la cantidad.
+    if (producto.LineaFacturaID) {
+      return this.incrementarLinea(producto)
+    }
+    const grupos = await this.obtenerGruposCategoria(producto.idCategoria)
+    if (grupos.length > 0) {
+      this.setState({
+        showModModal: true,
+        modProducto: producto,
+        modLinea: null,
+        modGrupos: grupos,
+        modSeleccion: this.seleccionInicial(grupos),
+        modNota: "",
+        modGuardando: false
+      })
+      return
+    }
+    await this.agregarProducto(producto, [])
+  }
+
+  incrementarLinea = async (lineaFactura) => {
+    const lista = [...this.state.factura]
+    let indice = lista.findIndex(
+      (l) => Number(l.LineaFacturaID) === Number(lineaFactura.LineaFacturaID)
+    )
+    if (indice === -1) {
+      indice = lista.findIndex((l) => l.codigo === lineaFactura.codigo)
+    }
+    if (indice === -1) return
+    const cantidad = Number(lista[indice].Cantidad || 0) + 1
+    lista[indice] = {
+      ...lista[indice],
+      Cantidad: cantidad,
+      Subtotal: Number(lista[indice].Precio || 0) * cantidad
+    }
+    this.setState({ factura: lista }, () => this.actualizarTotal())
+    await this.guardarCantidadLinea(lista[indice])
+  }
+
+  agregarProducto = async (producto, modificadores, nota = "") => {
+    const mesaElegida = { MesaID: cookies.get('MesaID').MesaID, NombreMesa: cookies.get('MesaID').Nombre }
+    const lista = [...this.state.factura]
+    const seleccion = Array.isArray(modificadores) ? modificadores : []
+    const notaLinea = (nota || "").toString().trim().slice(0, 255)
+
+    // Si no hay opciones ni nota, se fusiona con la misma línea.
+    if (seleccion.length === 0 && !notaLinea) {
+      const indice = lista.findIndex((l) => l.codigo === producto.codigo)
+      if (indice !== -1 && !llevaModificadores(lista[indice])) {
+        return this.incrementarLinea(lista[indice])
+      }
+    }
+
+    let idFactura = this.idFacturaActual()
+    if (!idFactura) {
+      const idFac = await axios.post(baseUrl + "factura/add/", mesaElegida)
+      idFactura = idFac.data[0].ID
+    }
+    const cargosGuardados =
+      lista.length === 0 ? await this.guardarCargosPendientes(idFactura) : this.state.cargosAplicados
+
+    const baseLinea = {
+      codigo: producto.codigo,
+      idCategoria: producto.idCategoria || this.categoriaDeProducto(producto.codigo),
+      PrecioBase: Number(producto.precio) || 0,
+      FacturaID: idFactura,
+      Cantidad: 1,
+      Subtotal: Number(producto.precio) || 0,
+      Precio: Number(producto.precio) || 0,
+      Nombre: producto.nombre,
+      Nota: notaLinea || null,
+      LineaFacturaID: 0
+    }
+    const idLineFact = await axios.post(baseUrl + "factura/linea/", baseLinea)
+    const extras = seleccion.reduce((acc, m) => acc + (Number(m.PrecioExtra) || 0), 0)
+    const precioUnitario = this.redondear2((Number(producto.precio) || 0) + extras)
+    const lineaFactura = this.aplicarModificadoresLinea(
+      {
+        ...baseLinea,
+        Precio: precioUnitario,
+        Subtotal: precioUnitario,
+        LineaFacturaID: idLineFact.data[0].ID
+      },
+      seleccion
+    )
+    if (precioUnitario !== (Number(baseLinea.Precio) || 0)) {
+      try {
+        await this.guardarCantidadLinea(lineaFactura)
+      } catch (e) {
+        // Se conserva al menos la línea creada; el precio se puede ajustar luego.
+      }
+    }
+    if (seleccion.length > 0 || notaLinea) {
+      try {
+        await axios.post(baseUrl + "linea/modificadores", {
+          LineaFacturaID: lineaFactura.LineaFacturaID,
+          Modificadores: seleccion,
+          Nota: notaLinea
+        })
+      } catch (e) {
+        // La línea ya quedó creada; se puede reintentar con "Editar".
+      }
+    }
+    lista.push(lineaFactura)
+    if (this.state.cliente) {
+      this.guardarCliente(idFactura, this.state.cliente)
+    }
+    const existeCuenta = (this.state.cuentas || []).some(
+      (cuenta) => Number(cuenta.FacturaID) === Number(idFactura)
+    )
+    const cuentasActuales = existeCuenta
+      ? this.state.cuentas
+      : [
+          ...(this.state.cuentas || []),
+          {
+            FacturaID: idFactura,
+            Cliente: this.state.cliente || "",
+            Base: 0,
+            Cargos: 0,
+            Total: 0,
+            Lineas: 0
+          }
+        ]
+    this.setState({
+      idFactura,
+      cuentaActiva: idFactura,
+      cuentas: cuentasActuales,
+      factura: lista,
+      cargosAplicados: cargosGuardados
+    }, () => this.actualizarTotal())
+  }
+
+  cerrarModalModificadores = () => {
+    this.setState({
+      showModModal: false,
+      modProducto: null,
+      modLinea: null,
+      modGrupos: [],
+      modSeleccion: {},
+      modNota: "",
+      modGuardando: false
+    })
+  }
+
+  confirmarModificadores = async () => {
+    const { modGrupos, modSeleccion, modProducto, modLinea, modNota } = this.state
+    for (const grupo of modGrupos || []) {
+      if (Number(grupo.Obligatorio) === 1 && (modSeleccion[grupo.GrupoID] || []).length === 0) {
+        Swal.fire("Falta seleccionar", 'El grupo "' + grupo.Nombre + '" es obligatorio.', "warning")
+        return
+      }
+    }
+    const modificadores = this.seleccionAModificadores(modGrupos, modSeleccion)
+    const nota = (modNota || "").toString().trim().slice(0, 255)
+    const cambiaMods = (modGrupos || []).length > 0
+    this.setState({ modGuardando: true })
+    try {
+      if (modLinea) {
+        const payload = {
+          LineaFacturaID: modLinea.LineaFacturaID,
+          Nota: nota
+        }
+        if (cambiaMods) payload.Modificadores = modificadores
+        await axios.post(baseUrl + "linea/modificadores", payload)
+        const extrasNuevos = cambiaMods
+          ? modificadores.reduce((acc, m) => acc + (Number(m.PrecioExtra) || 0), 0)
+          : 0
+        const extrasViejos = (modLinea.Modificadores || []).reduce(
+          (acc, m) => acc + (Number(m.PrecioExtra) || 0),
+          0
+        )
+        const base =
+          modLinea.PrecioBase !== undefined && modLinea.PrecioBase !== null
+            ? Number(modLinea.PrecioBase)
+            : Number(modLinea.Precio || 0) - extrasViejos
+        const precio = this.redondear2(base + extrasNuevos)
+        let actualizada = null
+        const lista = (this.state.factura || []).map((linea) => {
+          if (Number(linea.LineaFacturaID) !== Number(modLinea.LineaFacturaID)) return linea
+          let nueva = { ...linea, Nota: nota || null }
+          if (cambiaMods) {
+            nueva = this.aplicarModificadoresLinea(
+              {
+                ...nueva,
+                Precio: precio,
+                Subtotal: this.redondear2(precio * Number(linea.Cantidad || 1))
+              },
+              modificadores
+            )
+          }
+          actualizada = nueva
+          return nueva
+        })
+        if (actualizada && cambiaMods) {
+          try {
+            await this.guardarCantidadLinea(actualizada)
+          } catch (e) {
+            // la selección ya quedó guardada
+          }
+        }
+        this.setState({
+          factura: lista,
+          showModModal: false,
+          modProducto: null,
+          modLinea: null,
+          modGrupos: [],
+          modSeleccion: {},
+          modNota: "",
+          modGuardando: false
+        }, () => this.actualizarTotal())
+      } else if (modProducto) {
+        const producto = modProducto
+        this.setState({
+          showModModal: false,
+          modProducto: null,
+          modLinea: null,
+          modGrupos: [],
+          modSeleccion: {},
+          modNota: "",
+          modGuardando: false
+        })
+        await this.agregarProducto(producto, modificadores, nota)
+      } else {
+        this.cerrarModalModificadores()
+      }
+    } catch (e) {
+      this.setState({ modGuardando: false })
+      Swal.fire("Error", "No se pudieron guardar las opciones del producto.", "error")
+    }
+  }
+
+  editarModificadores = async (lineaFactura) => {
+    if (!lineaFactura) return
+    const idCategoria = lineaFactura.idCategoria || this.categoriaDeProducto(lineaFactura.codigo)
+    const grupos = await this.obtenerGruposCategoria(idCategoria)
+    let guardados = lineaFactura.Modificadores || []
+    if (grupos.length > 0) {
+      try {
+        const res = await axios.get(
+          baseUrl + "linea/" + lineaFactura.LineaFacturaID + "/modificadores"
+        )
+        if (Array.isArray(res.data)) guardados = res.data
+      } catch (e) {
+        // se usan los que ya tenía en pantalla
+      }
+    }
+    this.setState({
+      showModModal: true,
+      modProducto: null,
+      modLinea: lineaFactura,
+      modGrupos: grupos,
+      modSeleccion: grupos.length > 0 ? this.seleccionDesdeLinea(grupos, guardados) : {},
+      modNota: lineaFactura.Nota || "",
+      modGuardando: false
+    })
+  }
+
+  lineaTieneOpciones = (linea) => {
+    if (!linea) return false
+    if (Array.isArray(linea.Modificadores) && linea.Modificadores.length > 0) return true
+    const idCategoria = Number(linea.idCategoria)
+    return (this.state.categoriasConOpciones || []).includes(idCategoria)
+  }
+
+  renderModResumen = (linea) => {
+    const mods = (linea && linea.Modificadores) || []
+    const nota = (linea && linea.Nota ? String(linea.Nota).trim() : "")
+    if (mods.length === 0 && !nota) return null
+    const visibles = mods.filter((m) => !this.esModificadorInterno(m))
+    const internos = mods.filter((m) => this.esModificadorInterno(m))
+    return (
+      <div className="mod-resumen">
+        {visibles.length > 0 && <div>+ {visibles.map((m) => m.ItemNombre).join(", ")}</div>}
+        {internos.length > 0 && (
+          <div className="mod-resumen-interno">
+            {internos.map((m) => m.GrupoNombre + ": " + m.ItemNombre).join(" · ")}
+          </div>
+        )}
+        {nota && (
+          <div className="nota-linea">
+            <i className="bi bi-chat-left-text"></i> {nota}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  confirmarEliminarLinea = async (linea) => {
+    if (!linea) return
+    const confirmacion = await Swal.fire({
+      title: "Quitar del pedido",
+      html:
+        "<strong>" +
+        escapar(linea.Nombre) +
+        "</strong><br/><span>¿Seguro que desea quitarlo?</span>",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Quitar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#ef4444",
+      cancelButtonColor: "#6b7280"
+    })
+    if (confirmacion.isConfirmed) {
+      this.eliminarLinea(linea)
+    }
+  }
+
+  renderLineasPedidoMovil = (enDivision) => {
+    const lineas = this.state.factura || []
+    return (
+      <div className="solo-movil">
+
+        {lineas.length === 0 && (
+          <div className="linea-movil-vacia">Todavía no hay productos en esta cuenta.</div>
+        )}
+
+        {lineas.map((linea) => (
+          <div className="linea-movil" key={linea.LineaFacturaID || linea.codigo}>
+            <div className="linea-movil-top">
+              <div className="linea-movil-nombre">
+                {linea.Nombre}
+                {this.renderModResumen(linea)}
+              </div>
+              <div className="linea-movil-subtotal">₡ {linea.Subtotal}</div>
+            </div>
+
+            <div className="linea-movil-bajo">
+              <div className="linea-movil-cantidad">
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={() => this.eliminarUnProducto(linea)}
+                  title="Quitar una unidad"
+                  aria-label="Quitar una unidad"
+                >
+                  <i className="bi bi-dash-lg"></i>
+                </button>
+                <span>{linea.Cantidad}</span>
+                <button
+                  type="button"
+                  className="btn btn-success btn-sm"
+                  onClick={() => this.agregarALista(linea)}
+                  title="Agregar una unidad"
+                  aria-label="Agregar una unidad"
+                >
+                  <i className="bi bi-plus-lg"></i>
+                </button>
+              </div>
+              <span className="linea-movil-precio-unit">₡ {linea.Precio} c/u</span>
+            </div>
+
+            <div className="linea-movil-acciones">
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                onClick={() => this.editarModificadores(linea)}
+              >
+                <i
+                  className={
+                    "bi " + (this.lineaTieneOpciones(linea) ? "bi-sliders" : "bi-chat-left-text")
+                  }
+                ></i>{" "}
+                {this.lineaTieneOpciones(linea) ? "Opciones" : "Nota"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-info btn-sm"
+                onClick={() => this.moverLinea(linea)}
+                disabled={enDivision}
+                title={
+                  enDivision
+                    ? "Termine la división para mover productos"
+                    : "Mover a otra cuenta"
+                }
+              >
+                <i className="bi bi-arrow-left-right"></i> Mover
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-danger btn-sm"
+                onClick={() => this.confirmarEliminarLinea(linea)}
+              >
+                <i className="bi bi-trash"></i> Quitar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  renderModalModificadores = () => {
+    const { modGrupos, modSeleccion, modProducto, modLinea, modNota, modGuardando } = this.state
+    const nombre = (modLinea && modLinea.Nombre) || (modProducto && modProducto.nombre) || ""
+    const tieneGrupos = (modGrupos || []).length > 0
+    return (
+      <Modal show={this.state.showModModal} onHide={this.cerrarModalModificadores} centered className="mod-modal">
+        <Modal.Header closeButton>
+          <Modal.Title>
+            {tieneGrupos
+              ? modLinea
+                ? "Editar opciones"
+                : "Elegir opciones"
+              : "Nota para cocina"}
+            {nombre ? " · " + nombre : ""}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body style={{ maxHeight: "65vh", overflowY: "auto" }}>
+          {!tieneGrupos && (
+            <div className="mod-sin-grupos">
+              <i className="bi bi-info-circle"></i> Este producto no tiene guarniciones ni
+              términos configurados. Puedes dejar una nota para cocina.
+            </div>
+          )}
+
+          <div className="mod-nota-campo">
+            <label htmlFor="mod-nota">
+              <i className="bi bi-chat-left-text"></i> Nota para cocina{" "}
+              <span>(opcional)</span>
+            </label>
+            <textarea
+              id="mod-nota"
+              rows="2"
+              maxLength="255"
+              value={modNota}
+              onChange={(e) => this.setState({ modNota: e.target.value })}
+              placeholder="Ej. sin cebolla, sin queso, bien cocido..."
+            />
+            <div className="mod-nota-ayuda">
+              Se imprime en la comanda de cocina, no en el ticket del cliente.
+            </div>
+          </div>
+
+          {(modGrupos || []).map((grupo) => {
+            const elegidos = modSeleccion[grupo.GrupoID] || []
+            return (
+              <div className="mod-grupo" key={grupo.GrupoID}>
+                <div className="mod-grupo-titulo">
+                  <span>{grupo.Nombre}</span>
+                  {Number(grupo.Obligatorio) === 1 && (
+                    <span className="mod-obligatorio">obligatorio</span>
+                  )}
+                  {Number(grupo.SoloInterno) === 1 && (
+                    <span className="mod-solo-cocina">solo cocina</span>
+                  )}
+                </div>
+                {(grupo.Items || []).length === 0 && (
+                  <div className="text-muted small">Sin opciones configuradas.</div>
+                )}
+                <div className="mod-opciones-lista">
+                  {(grupo.Items || []).map((item) => {
+                    const activo = elegidos.includes(item.ItemID)
+                    return (
+                      <label key={item.ItemID} className={"mod-opcion" + (activo ? " activa" : "")}>
+                        <input
+                          type={grupo.Tipo === "radio" ? "radio" : "checkbox"}
+                          name={"grupo-" + grupo.GrupoID}
+                          checked={activo}
+                          onChange={() => this.cambiarSeleccionMod(grupo, item.ItemID)}
+                        />
+                        <span className="mod-opcion-nombre">{item.Nombre}</span>
+                        {Number(item.PrecioExtra) > 0 && (
+                          <span className="mod-extra">₡ {item.PrecioExtra}</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={this.cerrarModalModificadores}>
+            Cancelar
+          </Button>
+          <Button variant="success" onClick={this.confirmarModificadores} disabled={modGuardando}>
+            {modGuardando
+              ? "Guardando..."
+              : modLinea
+              ? "Guardar cambios"
+              : "Agregar al pedido"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    )
+  }
+
   eliminarLinea(linea) {
     var lista = this.state.factura
     for (let index = 0; index < lista.length; index++) {
@@ -1232,62 +2024,95 @@ class pedidos extends React.Component {
       Swal.fire("Cuenta vacía", "Agregue productos antes de cobrar.", "info")
       return
     }
-    let totalPagado = 0
-    this.state.pagos.forEach(p => {
-      totalPagado += parseFloat(p.monto || 0)
-    })
-    const totalFactura = parseFloat(this.state.total || 0)
-    if (totalPagado < totalFactura - 0.01) {
-      alert("El monto pagado es menor al total a pagar")
+    if (this.state.cobrando) return
+    const errorPagos = validarPagos(this.state.pagos)
+    if (errorPagos) {
+      Swal.fire("Pago inválido", errorPagos, "warning")
       return
     }
-    const pagosLimpios = this.state.pagos.filter(p => parseFloat(p.monto || 0) > 0)
-    let vueltoEfectivo = 0
-    this.state.pagos.forEach(p => {
-      const metodo = (p.metodo_pago || '').toString().toUpperCase()
-      if (metodo === 'EFECTIVO') {
-        vueltoEfectivo += parseFloat(p.monto || 0)
-      }
-    })
-    const vuelto = vueltoEfectivo - totalFactura > 0 ? vueltoEfectivo - totalFactura : 0
+    const pagosLimpios = this.state.pagos
+      .map((pago) => ({ ...pago, monto: this.redondear2(pago.monto) }))
+      .filter((pago) => pago.monto > 0)
+    if (pagosLimpios.length === 0) {
+      Swal.fire("Sin pagos", "Registre al menos un pago.", "warning")
+      return
+    }
+    const totalPagado = pagosLimpios.reduce((acc, pago) => acc + pago.monto, 0)
+    const totalFactura = this.redondear2(this.state.total || 0)
+    if (totalPagado < totalFactura - 0.01) {
+      Swal.fire(
+        "Pago incompleto",
+        "Falta ₡ " + this.redondear2(totalFactura - totalPagado) + " por cubrir.",
+        "warning"
+      )
+      return
+    }
+    const vuelto = vueltoDePagos(pagosLimpios, totalFactura)
+    this.setState({ cobrando: true })
     try {
-      await axios.post(baseUrl + "factura/pagar/", {
+      const respuesta = await axios.post(baseUrl + "factura/pagar/", {
         FacturaID: facturaID,
         pagos: pagosLimpios,
         usuario_id: cookies.get('idUsuario') || null,
         vuelto,
         Total: totalFactura
       })
-      await this.imprimirTicketPagado(pagosLimpios, vuelto, totalFactura)
-      const { cuentas } = await this.cargarCuentas(facturaID)
-      const restantes = cuentas || []
-      if (restantes.length > 0) {
-        // La mesa sigue ocupada: abrir la siguiente cuenta sin salir de la mesa
-        this.setState({
-          showPayModal: false,
-          showCartModal: false,
-          factura: [],
-          idFactura: 0,
-          cuentaActiva: 0,
-          total: 0,
-          cliente: ""
-        })
-        const siguiente = restantes[0]
-        await this.cargarFactura(siguiente.FacturaID)
-        Swal.fire({
-          toast: true,
-          position: "top-end",
-          icon: "success",
-          title: "Cuenta pagada. Quedan " + restantes.length + " cuenta(s).",
-          timer: 1800,
-          showConfirmButton: false
-        })
-      } else {
-        this.setearVacio()
-        window.location.href = "/mesas"
+      const vueltoFinal =
+        respuesta.data && respuesta.data.vuelto !== undefined
+          ? Number(respuesta.data.vuelto)
+          : vuelto
+      try {
+        await this.imprimirTicketPagado(pagosLimpios, vueltoFinal, totalFactura)
+      } catch (e) {
+        Swal.fire(
+          "Cobro registrado",
+          "La cuenta se cobró, pero no se pudo imprimir el ticket. Puede reimprimirlo desde Facturas.",
+          "warning"
+        )
+      }
+      try {
+        const { cuentas } = await this.cargarCuentas(facturaID)
+        const restantes = cuentas || []
+        if (restantes.length > 0) {
+          // La mesa sigue ocupada: abrir la siguiente cuenta sin salir de la mesa
+          this.setState({
+            showPayModal: false,
+            showCartModal: false,
+            cobrando: false,
+            factura: [],
+            idFactura: 0,
+            cuentaActiva: 0,
+            total: 0,
+            cliente: ""
+          })
+          const siguiente = restantes[0]
+          await this.cargarFactura(siguiente.FacturaID)
+          Swal.fire({
+            toast: true,
+            position: "top-end",
+            icon: "success",
+            title: "Cuenta pagada. Quedan " + restantes.length + " cuenta(s).",
+            timer: 1800,
+            showConfirmButton: false
+          })
+        } else {
+          this.setearVacio()
+          window.location.href = "/mesas"
+        }
+      } catch (e) {
+        this.setState({ cobrando: false })
+        Swal.fire(
+          "Cobro registrado",
+          "La cuenta se cobró, pero no se pudo actualizar la pantalla. Revise Facturas o recargue la página.",
+          "warning"
+        )
       }
     } catch (e) {
-      alert("Error al cobrar la factura")
+      this.setState({ cobrando: false })
+      const mensaje =
+        (e && e.response && e.response.data && e.response.data.error) ||
+        "No se pudo cobrar la factura."
+      Swal.fire("No se cobró", mensaje, "error")
     }
   }
   // ---- Cobro por ítems (Tramo 2) ----
@@ -1335,16 +2160,13 @@ class pedidos extends React.Component {
         (monto === 0 || Math.abs(monto - totalAnterior) < 0.01)
       return eraAutomatico ? { ...pago, monto: resumen.total } : pago
     })
-    const efectivo = pagosNuevos
-      .filter((pago) => String(pago.metodo_pago || "").toUpperCase() === "EFECTIVO")
-      .reduce((acc, pago) => acc + Number(pago.monto || 0), 0)
     this.setState({
       itemsSeleccion: seleccion,
       itemsBase: resumen.base,
       itemsCargos: resumen.cargos,
       itemsTotal: resumen.total,
       pagosItems: pagosNuevos,
-      itemsVuelto: Math.max(0, this.redondear2(efectivo - resumen.total))
+      itemsVuelto: vueltoDePagos(pagosNuevos, resumen.total)
     })
     return { resumen, pagos: pagosNuevos }
   }
@@ -1411,6 +2233,14 @@ class pedidos extends React.Component {
       Swal.fire("Cuenta vacía", "Agregue productos antes de cobrar por ítems.", "info")
       return
     }
+    if ((this.state.metodosPago || []).length === 0) {
+      Swal.fire(
+        "Sin métodos de pago",
+        "Active al menos un método de pago en Administración.",
+        "warning"
+      )
+      return
+    }
     let cuenta = null
     try {
       cuenta = await this.cargarFactura(facturaID)
@@ -1442,16 +2272,18 @@ class pedidos extends React.Component {
       showItemsModal: true,
       showPayModal: false,
       showCartModal: false,
+      cobrando: false,
       itemsSeleccion: {},
       itemsBase: 0,
       itemsCargos: [],
       itemsTotal: 0,
       itemsVuelto: 0,
-      pagosItems: [{ metodo_pago: 'EFECTIVO', monto: 0, referencia: '' }]
+      pagosItems: [{ metodo_pago: this.metodoInicial(), monto: 0, referencia: '' }]
     })
   }
 
   cerrarCobroItems = () => {
+    if (this.state.cobrando) return
     this.setState({ showItemsModal: false })
   }
 
@@ -1500,7 +2332,7 @@ class pedidos extends React.Component {
     const totalFactura = parseFloat(this.state.itemsTotal || 0)
     if (totalPagado >= totalFactura - 0.01) return
     const restante = totalFactura - totalPagado
-    const metodo = this.state.metodosPago[1] ? this.state.metodosPago[1].nombre : 'TARJETA'
+    const metodo = this.state.metodosPago[1] ? this.state.metodosPago[1].nombre : this.metodoInicial()
     this.setState({
       pagosItems: [
         ...(this.state.pagosItems || []),
@@ -1516,20 +2348,16 @@ class pedidos extends React.Component {
   }
 
   cambiarPagoItems = (index, campo, valor) => {
-    const pagosItems = [...(this.state.pagosItems || [])]
-    pagosItems[index][campo] = valor
+    const pagosItems = (this.state.pagosItems || []).map((pago, i) =>
+      i === index ? { ...pago, [campo]: valor } : pago
+    )
     this.setState({ pagosItems }, this.calcularVueltoItems)
   }
 
   calcularVueltoItems = () => {
-    let efectivo = 0
-    ;(this.state.pagosItems || []).forEach((pago) => {
-      if (String(pago.metodo_pago || "").toUpperCase() === "EFECTIVO") {
-        efectivo += parseFloat(pago.monto || 0)
-      }
+    this.setState({
+      itemsVuelto: vueltoDePagos(this.state.pagosItems, this.state.itemsTotal)
     })
-    const vuelto = efectivo - parseFloat(this.state.itemsTotal || 0)
-    this.setState({ itemsVuelto: vuelto > 0 ? this.redondear2(vuelto) : 0 })
   }
 
   // Prefactura de solo los ítems marcados. No crea factura ni pago.
@@ -1563,7 +2391,8 @@ class pedidos extends React.Component {
           Nombre: linea.Nombre,
           Cantidad: cantidad,
           Precio: Number(linea.Precio || 0),
-          Subtotal: this.redondear2(Number(linea.Precio || 0) * cantidad)
+          Subtotal: this.redondear2(Number(linea.Precio || 0) * cantidad),
+          _guarnicionesDetalle: guarnicionesTicket(linea)
         })
       }
     })
@@ -1657,6 +2486,11 @@ class pedidos extends React.Component {
       Cantidad: Number(ajuste.seleccion[idLinea] || 0)
     }))
     const totalSeleccion = resumen.total
+    const errorPagos = validarPagos(pagosAjustados)
+    if (errorPagos) {
+      Swal.fire("Pago inválido", errorPagos, "warning")
+      return
+    }
     let totalPagado = 0
     ;(pagosAjustados || []).forEach((pago) => {
       totalPagado += parseFloat(pago.monto || 0)
@@ -1680,6 +2514,7 @@ class pedidos extends React.Component {
 
     // Solo el POST decide si el cobro se hizo. Si falla, no se toca la cuenta.
     let data = null
+    this.setState({ cobrando: true })
     try {
       const res = await axios.post(baseUrl + "factura/cobrar-items/", {
         FacturaID: facturaID,
@@ -1721,6 +2556,7 @@ class pedidos extends React.Component {
       } else {
         Swal.fire("Error", mensaje, "error")
       }
+      this.setState({ cobrando: false })
       return
     }
 
@@ -1746,12 +2582,13 @@ class pedidos extends React.Component {
       showItemsModal: false,
       showPayModal: false,
       showCartModal: false,
+      cobrando: false,
       itemsSeleccion: {},
       itemsBase: 0,
       itemsCargos: [],
       itemsTotal: 0,
       itemsVuelto: 0,
-      pagosItems: [{ metodo_pago: 'EFECTIVO', monto: 0, referencia: '' }]
+      pagosItems: [{ metodo_pago: this.metodoInicial(), monto: 0, referencia: '' }]
     })
     try {
       const { cuentas } = await this.cargarCuentas()
@@ -1824,7 +2661,9 @@ class pedidos extends React.Component {
         Nombre: linea.Nombre,
         Cantidad: linea.Cantidad,
         Precio: linea.Precio,
-        Subtotal: linea.Subtotal
+        Subtotal: linea.Subtotal,
+        // Solo guarniciones visibles al cliente, con grupo y precio.
+        _guarnicionesDetalle: guarnicionesTicket(linea)
       })),
       cargos: (this.state.cargosAplicados || []).map((cargo) => ({
         nombre: cargo.nombre,
@@ -1848,6 +2687,163 @@ class pedidos extends React.Component {
     }
     const html = construirTicketHTML(this.datosTicket("prefactura"), this.state.configTicket, "prefactura")
     imprimirTicket(html)
+  }
+
+  imprimirComanda = async () => {
+    if (!this.state.factura || this.state.factura.length === 0) {
+      alert("No hay productos en la cuenta")
+      return
+    }
+    const config = this.state.configComanda || {
+      titulo: 'COMANDA',
+      ancho_mm: 80,
+      tamano_fuente: 9,
+      mostrar_fecha: 1,
+      mostrar_hora: 1,
+      mostrar_mesa: 1,
+      mostrar_cliente: 1,
+      mostrar_cantidad: 1,
+      mostrar_guarniciones: 1,
+      mostrar_termino: 1,
+      agrupar_por_estacion: 0,
+      leyenda_pie: ''
+    }
+    const categoriasCocina = this.state.categoriasCocina || []
+    const mapCat = {}
+    categoriasCocina.forEach(c => {
+      if (c.imprimir_cocina) mapCat[c.idCategoria] = true
+    })
+    const lineasFiltradas = []
+    const mapProductos = {}
+    const productosParaCocina =
+      (this.state.productosTodos || []).length > 0
+        ? this.state.productosTodos
+        : this.state.productosBD || []
+    ;(productosParaCocina || []).forEach(p => {
+      mapProductos[p.codigo] = p.idCategoria
+    })
+    ;(this.state.factura || []).forEach(linea => {
+      const idCat = linea.idCategoria || mapProductos[linea.codigo]
+      if (idCat && mapCat[idCat]) {
+        lineasFiltradas.push(linea)
+      }
+    })
+    if (lineasFiltradas.length === 0) {
+      alert("No hay productos para imprimir en cocina con las categorías configuradas")
+      return
+    }
+    const { fecha, hora } = fechaHoraActual()
+    const ancho = Number(config.ancho_mm) === 58 ? 58 : 80
+    const relleno = ancho === 58 ? "2mm 1.5mm 4mm" : "3mm 2mm 6mm"
+    const fuente = Number(config.tamano_fuente) || 9
+    const mostrarFecha = Number(config.mostrar_fecha) === 1
+    const mostrarHora = Number(config.mostrar_hora) === 1
+    const mostrarMesa = Number(config.mostrar_mesa) === 1
+    const mostrarCliente = Number(config.mostrar_cliente) === 1
+    const mostrarCantidad = Number(config.mostrar_cantidad) === 1
+    const mostrarGuarniciones = Number(config.mostrar_guarniciones) === 1
+    const mostrarTermino = Number(config.mostrar_termino) === 1
+    const leyenda = lineasDeTexto(config.leyenda_pie)
+
+    let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comanda</title>
+<style>
+@page{size:${ancho}mm auto;margin:0}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;font-size:${fuente}px}
+.ticket{width:${ancho}mm;padding:${relleno};font-weight:600}
+.cab{border-bottom:1px dashed #000;padding-bottom:4px;margin-bottom:6px;text-align:center}
+.titulo{font-size:${fuente + 3}px;font-weight:700;letter-spacing:1px}
+.info{display:flex;flex-wrap:wrap;gap:4px 8px;margin-top:4px}
+.linea{border-bottom:1px dashed #999;margin:6px 0}
+.item{display:flex;gap:6px;align-items:flex-start;margin:6px 0}
+.cant{min-width:18px;text-align:right}
+.detalle{flex:1}
+.nombre{font-weight:700}
+.sub{font-size:${fuente - 1}px;margin-left:6px}
+.nota{font-size:${fuente - 1}px;margin:4px 0 0 6px;padding:2px 4px;border:1px dashed #000;font-weight:700}
+.pie{margin-top:10px;text-align:center;font-size:${fuente - 1}px}
+</style></head><body><div class="ticket"><div class="cab"><div class="titulo">${escapar(config.titulo || 'COMANDA')}</div>
+<div class="info">
+${mostrarFecha ? `<span>Fecha: ${escapar(fecha)}</span>` : ''}
+${mostrarHora ? `<span>Hora: ${escapar(hora)}</span>` : ''}
+${mostrarMesa && this.state.mesaActual ? `<span>Mesa: ${escapar(this.state.mesaActual)}</span>` : ''}
+${mostrarCliente && this.state.cliente ? `<span>Cliente: ${escapar(this.state.cliente)}</span>` : ''}
+</div></div>
+`
+
+    lineasFiltradas.forEach(linea => {
+      html += `<div class="item"><div class="cant">${mostrarCantidad ? escapar(linea.Cantidad) : ''}</div><div class="detalle"><div class="nombre">${escapar(linea.Nombre)}</div>`
+      const mods = Array.isArray(linea.Modificadores) ? linea.Modificadores : []
+      if (mods.length > 0) {
+        const visiblesPorGrupo = {}
+        const internosPorGrupo = {}
+        mods.forEach((m) => {
+          const destino = this.esModificadorInterno(m) ? internosPorGrupo : visiblesPorGrupo
+          const clave = m.GrupoNombre || 'Extras'
+          if (!destino[clave]) destino[clave] = []
+          if (m.ItemNombre) destino[clave].push(m.ItemNombre)
+        })
+        if (mostrarGuarniciones) {
+          Object.keys(visiblesPorGrupo).forEach((grupo) => {
+            html += `<div class="sub">${escapar(grupo)}: ${escapar(visiblesPorGrupo[grupo].join(', '))}</div>`
+          })
+        }
+        if (mostrarTermino) {
+          Object.keys(internosPorGrupo).forEach((grupo) => {
+            html += `<div class="sub">${escapar(grupo)}: ${escapar(internosPorGrupo[grupo].join(', '))}</div>`
+          })
+        }
+      } else {
+        // Compatibilidad con líneas antiguas que traían el texto ya armado.
+        const guarn = linea.Guarniciones || linea.guarniciones || linea.modificadores
+        if (mostrarGuarniciones && guarn) {
+          if (Array.isArray(guarn)) {
+            const texto = guarn
+              .map(m => (typeof m === 'string' ? m : m.Nombre || m.nombre || m.descripcion))
+              .filter(Boolean)
+              .join(', ')
+            if (texto) html += `<div class="sub">+ ${escapar(texto)}</div>`
+          } else if (typeof guarn === 'string' && guarn.trim()) {
+            html += `<div class="sub">+ ${escapar(guarn)}</div>`
+          }
+        }
+        if (mostrarTermino && (linea.Termino || linea.termino)) {
+          html += `<div class="sub">Término: ${escapar(linea.Termino || linea.termino)}</div>`
+        }
+      }
+      const nota = (linea.Nota || "").trim()
+      if (nota) html += `<div class="nota">Nota: ${escapar(nota)}</div>`
+      html += `</div></div>`
+    })
+
+    html += `<div class="linea"></div>`
+    if (leyenda.length > 0) {
+      html += `<div class="pie">${leyenda.map(l => escapar(l)).join('<br>')}</div>`
+    }
+    html += `</div></body></html>`
+
+    // Usar el mismo sistema de impresión
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+    const doc = iframe.contentWindow.document
+    doc.open()
+    doc.write(html)
+    doc.close()
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.focus()
+        iframe.contentWindow.print()
+      } catch (e) {}
+      setTimeout(() => {
+        if (iframe.parentNode) document.body.removeChild(iframe)
+      }, 1000)
+    }, 200)
   }
   imprimirTicketPagado = (pagos, vuelto, total) => {
     const html = construirTicketHTML(
@@ -2025,6 +3021,66 @@ class pedidos extends React.Component {
     )
   }
 
+  renderNombreCuentaModal = () => {
+    const {
+      nombreCuentaModal,
+      nombreCuentaTitulo,
+      nombreCuentaValor,
+      nombreCuentaError
+    } = this.state
+    return (
+      <Modal
+        show={nombreCuentaModal}
+        onHide={() => this.cerrarNombreCuenta(null)}
+        onEntered={this.enfocarNombreCuenta}
+        centered
+        className="cuenta-nombre-modal"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>{nombreCuentaTitulo || "Nombre de la cuenta"}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form
+            onSubmit={(e) => {
+              e.preventDefault()
+              this.guardarNombreCuenta()
+            }}
+          >
+            <Form.Group>
+              <Form.Label>Nombre de la cuenta</Form.Label>
+              <Form.Control
+                ref={this.nombreCuentaInputRef}
+                autoFocus
+                type="text"
+                inputMode="text"
+                autoCapitalize="words"
+                autoComplete="off"
+                enterKeyHint="done"
+                maxLength={40}
+                value={nombreCuentaValor}
+                onChange={this.cambiarNombreCuenta}
+                placeholder="Ej. Ana"
+              />
+              {nombreCuentaError && (
+                <Form.Text className="text-danger d-block">
+                  {nombreCuentaError}
+                </Form.Text>
+              )}
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" onClick={() => this.cerrarNombreCuenta(null)}>
+            Cancelar
+          </Button>
+          <Button variant="success" onClick={this.guardarNombreCuenta}>
+            Guardar
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    )
+  }
+
   render() {
     const itemsSeleccion = this.state.itemsSeleccion || {}
     const itemsCargos = this.state.itemsCargos || []
@@ -2033,20 +3089,39 @@ class pedidos extends React.Component {
     const hayItemsSeleccionados = Object.keys(itemsSeleccion)
       .some((idLinea) => Number(itemsSeleccion[idLinea] || 0) > 0)
     const totalPagosItems = (this.state.pagosItems || [])
-      .reduce((acc, pago) => acc + parseFloat(pago.monto || 0), 0)
+      .reduce((acc, pago) => {
+        const monto = parseFloat(pago.monto || 0)
+        return acc + (monto > 0 ? monto : 0)
+      }, 0)
+    const faltaItems = Math.max(0, this.redondear2(itemsTotal - totalPagosItems))
+    const totalPagadoCobro = (this.state.pagos || [])
+      .reduce((acc, pago) => {
+        const monto = parseFloat(pago.monto || 0)
+        return acc + (monto > 0 ? monto : 0)
+      }, 0)
+    const objetivoCobro = this.objetivoCobro()
+    const faltaCobro = Math.max(0, this.redondear2(objetivoCobro - totalPagadoCobro))
     const cuentaActivaInfo = (this.state.cuentas || []).find(
       (cuenta) => Number(cuenta.FacturaID) === Number(this.state.idFactura)
     )
     const enDivision = !!(
       cuentaActivaInfo && Number(cuentaActivaInfo.PartesPagadas || 0) > 0
     )
+    const busquedaProducto = this.normalizarBusqueda(this.state.busquedaProducto)
+    const productosVisibles = busquedaProducto
+      ? (this.state.productosTodos || []).filter(
+          (producto) =>
+            this.normalizarBusqueda(producto.nombre).includes(busquedaProducto) ||
+            String(producto.codigo || "").includes(busquedaProducto)
+        )
+      : this.state.productosBD || []
     return (
       <body className="App-body">
         <div>
           <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
             <Container>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <button id="btNavbar" onClick={() => { window.location.href = "/mesas" }} style={{ padding: "0.3rem 0.7rem" }}>
+                <button className="btnNavbar" onClick={() => { window.location.href = "/mesas" }} style={{ padding: "0.3rem 0.7rem" }}>
                   <i className="bi bi-arrow-left"></i> Volver
                 </button>
                   <Navbar.Brand href="/mesas" className="d-flex align-items-center gap-2">
@@ -2064,15 +3139,42 @@ class pedidos extends React.Component {
               <Navbar.Collapse id="responsive-navbar-nav">
                 <Nav className="me-auto">
                   <Nav.Link >
-                    <button id="btNavbar" onClick={() => this.redirectNav("Administracion")}>Administración</button>
+                    <button className="btnNavbar" onClick={() => this.redirectNav("Administracion")}>Administración</button>
                   </Nav.Link>
                   <Nav.Link >
-                    <button id="btNavbar" onClick={() => this.redirectNav("Mesas")}>Mesas</button>
+                    <button className="btnNavbar" onClick={() => this.redirectNav("Mesas")}>Mesas</button>
                   </Nav.Link>
                 </Nav>
+                <div className="navbar-busqueda">
+                  <i className="bi bi-search"></i>
+                  <input
+                    type="search"
+                    value={this.state.busquedaProducto}
+                    placeholder="Buscar producto..."
+                    aria-label="Buscar producto"
+                    onChange={(e) => {
+                      const valor = e.target.value
+                      this.setState({
+                        busquedaProducto: valor,
+                        categoriaSeleccionada: valor.trim() ? -1 : this.state.categoriaSeleccionada
+                      })
+                    }}
+                  />
+                  {this.state.busquedaProducto && (
+                    <button
+                      type="button"
+                      className="btn-limpiar-busqueda"
+                      title="Limpiar búsqueda"
+                      aria-label="Limpiar búsqueda"
+                      onClick={() => this.setState({ busquedaProducto: "" })}
+                    >
+                      <i className="bi bi-x-lg"></i>
+                    </button>
+                  )}
+                </div>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                    <button className="btnNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
                   </Nav.Link>
                 </Nav>
               </Navbar.Collapse>
@@ -2090,7 +3192,7 @@ class pedidos extends React.Component {
                   <h3 className="nombreC">{this.state.cliente ? "Cuenta: " + this.state.cliente : "Cuenta general"}</h3>
                 <div className="factura-scroll-wrap">
                 <div className="factura-scroll-body" ref={this.listaFacturaRef}>
-                  <Table responsive className="table-sm" id="tbF">
+                  <Table responsive className="table-sm tabla-factura" id="tbF">
                     <thead>
                       <tr>
                         <th>{this.state.mesaActual}</th>
@@ -2110,18 +3212,39 @@ class pedidos extends React.Component {
                     <tbody id="tbody">
                       {this.state.factura.map((lineaFactura, index) => (
                         <tr key={index}>
-                          <td>{lineaFactura.Nombre}</td>
+                          <td>
+                            {lineaFactura.Nombre}
+                            {this.renderModResumen(lineaFactura)}
+                          </td>
                           <td>{this.renderPrecio(lineaFactura)}</td>
                           <td>
                             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <button className="btn btn-danger btn-sm" onClick={() => this.eliminarUnProducto(lineaFactura)}>-</button>
+                              <button className="btn btn-danger btn-sm" onClick={() => this.eliminarUnProducto(lineaFactura)} title="Quitar una unidad" aria-label="Quitar una unidad">-</button>
                               <span>{lineaFactura.Cantidad}</span>
-                              <button className="btn btn-success btn-sm" onClick={() => this.agregarALista(lineaFactura)}>+</button>
+                              <button className="btn btn-success btn-sm" onClick={() => this.agregarALista(lineaFactura)} title="Agregar una unidad" aria-label="Agregar una unidad">+</button>
                             </div>
                           </td>
                           <td>{lineaFactura.Subtotal}</td>
                           <td>
                             <div className="acciones-linea">
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => this.editarModificadores(lineaFactura)}
+                                title={
+                                  this.lineaTieneOpciones(lineaFactura)
+                                    ? "Guarniciones / término"
+                                    : "Nota para cocina"
+                                }
+                              >
+                                <i
+                                  className={
+                                    "bi " +
+                                    (this.lineaTieneOpciones(lineaFactura)
+                                      ? "bi-sliders"
+                                      : "bi-chat-left-text")
+                                  }
+                                ></i>
+                              </button>
                               <button
                                 className="btn btn-info btn-sm btMoverLinea"
                                 onClick={() => this.moverLinea(lineaFactura)}
@@ -2130,7 +3253,7 @@ class pedidos extends React.Component {
                               >
                                 <i className="bi bi-arrow-left-right"></i>
                               </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => this.eliminarLinea(lineaFactura)}><i className="bi bi-trash"></i></button>
+                              <button className="btn btn-danger btn-sm" onClick={() => this.eliminarLinea(lineaFactura)} title="Eliminar producto" aria-label="Eliminar producto"><i className="bi bi-trash"></i></button>
                             </div>
                           </td>
                         </tr>
@@ -2148,11 +3271,12 @@ class pedidos extends React.Component {
                 </div>
               </div>
               {this.renderCargos()}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+              <div className="factura-total-row" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
                 <label id="lbTotal1">Total</label><label id="lbTotal2">₡ {this.state.total}</label>
               </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "10px" }}>
+              <div className="factura-botones" style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "10px" }}>
                 <button id="btFactura1" onClick={() => this.imprimirPrefactura()}>Prefactura</button>
+                <button id="btComanda" onClick={() => this.imprimirComanda()}><i className="bi bi-printer"></i> Imprimir a cocina</button>
                 <button id="btFactura2" onClick={() => this.cerrarFactura("ticket")}>{enDivision ? "Cobrar / continuar" : "Cobrar"}</button>
                 <button id="btFacturaDividir" onClick={this.iniciarDivision}>
                   <i className="bi bi-people"></i> {enDivision ? "Continuar división" : "Dividir"}
@@ -2171,36 +3295,75 @@ class pedidos extends React.Component {
           <div className="duo">
             <div className="Productos">
               <div className="TablaProductos">
-                {this.state.productosBD.map((producto, index) => (
-                  <button key={index} className="btProductoCard" onClick={() => this.agregarALista(producto)}>
+                {productosVisibles.map((producto, index) => (
+                  <button key={producto.codigo || index} className="btProductoCard" onClick={() => this.agregarALista(producto)}>
                     <span className="btProductoNombre">{producto.nombre}</span>
                     <span className="btProductoPrecio">₡ {producto.precio}</span>
                   </button>
                 ))}
+                {productosVisibles.length === 0 && (
+                  <div className="producto-vacio">
+                    <i className="bi bi-search"></i>
+                    No se encontraron productos.
+                  </div>
+                )}
               </div>
             </div>
             <div className="Categorias">
-              <div className="TablaCategoria">
+              <button
+                type="button"
+                className={"cat-flecha cat-flecha-izq" + (this.state.catPuedeIzq ? "" : " oculta")}
+                onClick={() => this.moverCategorias(-1)}
+                title="Categorías anteriores"
+                aria-label="Categorías anteriores"
+              >
+                <i className="bi bi-chevron-left"></i>
+              </button>
+              <div
+                className="TablaCategoria categorias-scroll"
+                ref={this.categoriasRef}
+                onScroll={this.actualizarFlechasCategorias}
+              >
+                <button
+                  className={
+                    "btCategoria btCategoriaTodos" +
+                    (this.state.categoriaSeleccionada === -1 ? " btCategoriaActive" : "")
+                  }
+                  onClick={this.cargarTodosLosProductos}
+                >
+                  <i className="bi bi-house-door-fill"></i> Todos
+                </button>
                 {this.state.categoriasBD.map((categoria, index) => (
                   <button
                     key={index}
-                    id="btCategoria"
-                    className={this.state.categoriaSeleccionada === categoria.idCategoria ? "btCategoriaActive" : ""}
+                    className={
+                      "btCategoria" +
+                      (this.state.categoriaSeleccionada === categoria.idCategoria ? " btCategoriaActive" : "")
+                    }
                     onClick={() => this.cargarProductos(categoria.idCategoria)}
                   >
                     {categoria.Descripcion}
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                className={"cat-flecha cat-flecha-der" + (this.state.catPuedeDer ? "" : " oculta")}
+                onClick={() => this.moverCategorias(1)}
+                title="Más categorías"
+                aria-label="Más categorías"
+              >
+                <i className="bi bi-chevron-right"></i>
+              </button>
             </div>
           </div>
         </div>
         <button className="cart-fab" onClick={this.toggleCartModal}>
-          <i className="bi bi-cart3"></i> <span>Ver pedido · ₡ {this.state.total} · {this.state.factura.reduce((acc, item) => acc + (item.Cantidad || 0), 0)} items</span>
+          <i className="bi bi-cart3"></i> <span>Revisar pedido · ₡ {this.state.total} · {this.state.factura.reduce((acc, item) => acc + (item.Cantidad || 0), 0)} items</span>
         </button>
         <Modal show={this.state.showCartModal} onHide={this.toggleCartModal} size="lg" centered className="cart-modal">
           <Modal.Header closeButton>
-            <Modal.Title>Pedido - {this.state.mesaActual}</Modal.Title>
+            <Modal.Title>Revisar pedido - {this.state.mesaActual}</Modal.Title>
           </Modal.Header>
           <Modal.Body style={{ maxHeight: "70vh", overflowY: "auto" }}>
             {this.renderCuentas()}
@@ -2208,7 +3371,9 @@ class pedidos extends React.Component {
               <input type="text" placeholder="Nombre de la cuenta (opcional)" value={this.state.clienteInput} onChange={(e) => this.setState({ clienteInput: e.target.value })} onKeyDown={(e) => { if (e.key === "Enter") this.agregarNombreCliente() }} /><button className="btn-success btn-sm" onClick={() => this.agregarNombreCliente()}>Aceptar</button>
             </div>
             <h3 className="nombreC" style={{ marginLeft: 0 }}>{this.state.cliente ? "Cuenta: " + this.state.cliente : "Cuenta general"}</h3>
-            <Table responsive className="table-sm" id="tbF">
+            {this.renderLineasPedidoMovil(enDivision)}
+            <div className="solo-desktop">
+            <Table responsive className="table-sm tabla-factura">
               <thead>
                 <tr>
                   <td>Producto</td>
@@ -2221,18 +3386,39 @@ class pedidos extends React.Component {
               <tbody>
                 {this.state.factura.map((lineaFactura, index) => (
                   <tr key={index}>
-                    <td>{lineaFactura.Nombre}</td>
+                    <td>
+                      {lineaFactura.Nombre}
+                      {this.renderModResumen(lineaFactura)}
+                    </td>
                     <td>{this.renderPrecio(lineaFactura)}</td>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminarUnProducto(lineaFactura)}>-</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminarUnProducto(lineaFactura)} title="Quitar una unidad" aria-label="Quitar una unidad">-</button>
                         <span>{lineaFactura.Cantidad}</span>
-                        <button className="btn btn-success btn-sm" onClick={() => this.agregarALista(lineaFactura)}>+</button>
+                        <button className="btn btn-success btn-sm" onClick={() => this.agregarALista(lineaFactura)} title="Agregar una unidad" aria-label="Agregar una unidad">+</button>
                       </div>
                     </td>
                     <td>{lineaFactura.Subtotal}</td>
                     <td>
                       <div className="acciones-linea">
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => this.editarModificadores(lineaFactura)}
+                          title={
+                            this.lineaTieneOpciones(lineaFactura)
+                              ? "Guarniciones / término"
+                              : "Nota para cocina"
+                          }
+                        >
+                          <i
+                            className={
+                              "bi " +
+                              (this.lineaTieneOpciones(lineaFactura)
+                                ? "bi-sliders"
+                                : "bi-chat-left-text")
+                            }
+                          ></i>
+                        </button>
                         <button
                           className="btn btn-info btn-sm btMoverLinea"
                           onClick={() => this.moverLinea(lineaFactura)}
@@ -2241,13 +3427,14 @@ class pedidos extends React.Component {
                         >
                           <i className="bi bi-arrow-left-right"></i>
                         </button>
-                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminarLinea(lineaFactura)}><i className="bi bi-trash"></i></button>
+                        <button className="btn btn-danger btn-sm" onClick={() => this.eliminarLinea(lineaFactura)} title="Eliminar producto" aria-label="Eliminar producto"><i className="bi bi-trash"></i></button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </Table>
+            </div>
             {this.renderCargos()}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
               <strong>Total</strong>
@@ -2256,14 +3443,15 @@ class pedidos extends React.Component {
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={this.toggleCartModal}>Seguir agregando</Button>
-            <Button variant="primary" onClick={() => this.imprimirPrefactura()}>Prefactura</Button>
-            <Button variant="outline-primary" onClick={this.abrirCobroItems} disabled={enDivision}>
+            <Button variant="primary" className="accion-cobro" onClick={() => this.imprimirPrefactura()}>Prefactura</Button>
+            <Button className="btn-imprimir-cocina" onClick={() => this.imprimirComanda()}><i className="bi bi-printer"></i> Imprimir a cocina</Button>
+            <Button variant="outline-primary" className="accion-cobro" onClick={this.abrirCobroItems} disabled={enDivision}>
               Cobrar por ítems
             </Button>
-            <Button variant="outline-success" onClick={this.iniciarDivision}>
+            <Button variant="outline-success" className="accion-cobro" onClick={this.iniciarDivision}>
               <i className="bi bi-people"></i> {enDivision ? "Continuar división" : "Dividir"}
             </Button>
-            <Button variant="success" onClick={() => this.abrirCobro()}>Cobrar</Button>
+            <Button variant="success" className="accion-cobro" onClick={() => this.abrirCobro()}>Cobrar</Button>
           </Modal.Footer>
         </Modal>
 
@@ -2332,39 +3520,70 @@ class pedidos extends React.Component {
                 </div>
               </div>
             )}
+            <div className="pay-titulo">Forma de pago</div>
+            <div className="pay-cabecera">
+              <span>Método de pago</span>
+              <span>Monto recibido</span>
+              <span></span>
+            </div>
             {this.state.pagos.map((pago, index) => (
-              <Row key={index} className="align-items-center" style={{ marginBottom: "10px" }}>
-                <Col xs={5}>
-                  <Form.Select value={pago.metodo_pago} onChange={(e) => this.cambiarPago(index, 'metodo_pago', e.target.value)}>
-                    {this.state.metodosPago.map((m, mi) => (
-                      <option key={mi} value={m.nombre}>{m.nombre}</option>
-                    ))}
-                  </Form.Select>
-                </Col>
-                <Col xs={5}>
-                  <Form.Control type="number" value={pago.monto} onChange={(e) => this.cambiarPago(index, 'monto', e.target.value)} onBlur={this.calcularVuelto} />
-                </Col>
-                <Col xs={2}>
-                  {this.state.pagos.length > 1 && (
-                    <Button variant="outline-danger" size="sm" onClick={() => this.quitarPago(index)}><i className="bi bi-x"></i></Button>
-                  )}
-                </Col>
-              </Row>
+              <div className="pay-fila" key={index}>
+                <Form.Select
+                  value={pago.metodo_pago}
+                  aria-label="Método de pago"
+                  onChange={(e) => this.cambiarPago(index, 'metodo_pago', e.target.value)}
+                >
+                  {this.state.metodosPago.map((m, mi) => (
+                    <option key={mi} value={m.nombre}>{m.nombre}</option>
+                  ))}
+                </Form.Select>
+                <Form.Control
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Monto"
+                  aria-label="Monto recibido"
+                  value={pago.monto}
+                  onChange={(e) => this.cambiarPago(index, 'monto', e.target.value)}
+                  onBlur={this.calcularVuelto}
+                />
+                {this.state.pagos.length > 1 ? (
+                  <Button
+                    variant="outline-danger"
+                    size="sm"
+                    onClick={() => this.quitarPago(index)}
+                    title="Quitar pago"
+                    aria-label="Quitar pago"
+                  >
+                    <i className="bi bi-x"></i>
+                  </Button>
+                ) : (
+                  <span></span>
+                )}
+              </div>
             ))}
-            {(() => {
-              let totalPagado = 0
-              this.state.pagos.forEach(p => { totalPagado += parseFloat(p.monto || 0) })
-              if (totalPagado >= this.objetivoCobro() - 0.01) return null
-              return <Button variant="link" onClick={this.agregarPago}><i className="bi bi-plus"></i> Agregar otro pago</Button>
-            })()}
-            <hr />
-            <div className="pay-vuelto" style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>Vuelto (solo efectivo)</span>
-              <strong>₡ {this.state.vuelto}</strong>
+            {faltaCobro > 0.01 && (
+              <Button variant="link" onClick={this.agregarPago}>
+                <i className="bi bi-plus"></i> Agregar otro pago
+              </Button>
+            )}
+
+            <div className="pay-resumen">
+              <div>
+                <span>Pagado</span>
+                <strong>₡ {this.redondear2(totalPagadoCobro)}</strong>
+              </div>
+              <div className={faltaCobro > 0 ? "falta" : "vuelto"}>
+                <span>{faltaCobro > 0 ? "Falta por cubrir" : "Vuelto (solo efectivo)"}</span>
+                <strong>
+                  ₡ {faltaCobro > 0 ? faltaCobro : this.state.vuelto}
+                </strong>
+              </div>
             </div>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="outline-secondary" onClick={this.cerrarCobro} disabled={this.state.cobrandoParte}>
+            <Button variant="outline-secondary" onClick={this.cerrarCobro} disabled={this.state.cobrando || this.state.cobrandoParte}>
               Cancelar
             </Button>
             {!this.state.division && (
@@ -2385,8 +3604,9 @@ class pedidos extends React.Component {
                   : "Cobrar parte " + this.state.division.siguienteParte + " e imprimir"}
               </Button>
             ) : (
-              <Button variant="success" onClick={this.cobrarFactura}>
-                <i className="bi bi-check-lg"></i> Cobrar e imprimir
+              <Button variant="success" onClick={this.cobrarFactura} disabled={this.state.cobrando}>
+                <i className="bi bi-check-lg"></i>{" "}
+                {this.state.cobrando ? "Cobrando..." : "Cobrar e imprimir"}
               </Button>
             )}
           </Modal.Footer>
@@ -2489,47 +3709,66 @@ class pedidos extends React.Component {
             </div>
             <hr />
             <div className="items-pago-titulo">Forma de pago</div>
+            <div className="pay-cabecera">
+              <span>Método de pago</span>
+              <span>Monto recibido</span>
+              <span></span>
+            </div>
             {(this.state.pagosItems || []).map((pago, index) => (
-              <Row key={index} className="align-items-center" style={{ marginBottom: "10px" }}>
-                <Col xs={5}>
-                  <Form.Select
-                    value={pago.metodo_pago}
-                    onChange={(e) => this.cambiarPagoItems(index, 'metodo_pago', e.target.value)}
+              <div className="pay-fila" key={index}>
+                <Form.Select
+                  value={pago.metodo_pago}
+                  aria-label="Método de pago"
+                  onChange={(e) => this.cambiarPagoItems(index, 'metodo_pago', e.target.value)}
+                >
+                  {this.state.metodosPago.map((metodo, indice) => (
+                    <option key={indice} value={metodo.nombre}>{metodo.nombre}</option>
+                  ))}
+                </Form.Select>
+                <Form.Control
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  placeholder="Monto"
+                  aria-label="Monto recibido"
+                  value={pago.monto}
+                  onChange={(e) => this.cambiarPagoItems(index, 'monto', e.target.value)}
+                  onBlur={this.calcularVueltoItems}
+                />
+                {this.state.pagosItems.length > 1 ? (
+                  <Button
+                    variant="outline-danger"
+                    size="sm"
+                    onClick={() => this.quitarPagoItems(index)}
+                    title="Quitar pago"
+                    aria-label="Quitar pago"
                   >
-                    {this.state.metodosPago.map((metodo, indice) => (
-                      <option key={indice} value={metodo.nombre}>{metodo.nombre}</option>
-                    ))}
-                  </Form.Select>
-                </Col>
-                <Col xs={5}>
-                  <Form.Control
-                    type="number"
-                    value={pago.monto}
-                    onChange={(e) => this.cambiarPagoItems(index, 'monto', e.target.value)}
-                    onBlur={this.calcularVueltoItems}
-                  />
-                </Col>
-                <Col xs={2}>
-                  {this.state.pagosItems.length > 1 && (
-                    <Button variant="outline-danger" size="sm" onClick={() => this.quitarPagoItems(index)}>
-                      <i className="bi bi-x"></i>
-                    </Button>
-                  )}
-                </Col>
-              </Row>
+                    <i className="bi bi-x"></i>
+                  </Button>
+                ) : (
+                  <span></span>
+                )}
+              </div>
             ))}
-            {totalPagosItems < itemsTotal - 0.01 && (
+            {faltaItems > 0.01 && (
               <Button variant="link" onClick={this.agregarPagoItems}>
                 <i className="bi bi-plus"></i> Agregar otro pago
               </Button>
             )}
-            <div className="items-vuelto">
-              <span>Vuelto (solo efectivo)</span>
-              <strong>₡ {this.state.itemsVuelto}</strong>
+            <div className="pay-resumen">
+              <div>
+                <span>Pagado</span>
+                <strong>₡ {this.redondear2(totalPagosItems)}</strong>
+              </div>
+              <div className={faltaItems > 0 ? "falta" : "vuelto"}>
+                <span>{faltaItems > 0 ? "Falta por cubrir" : "Vuelto (solo efectivo)"}</span>
+                <strong>₡ {faltaItems > 0 ? faltaItems : this.state.itemsVuelto}</strong>
+              </div>
             </div>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="outline-secondary" onClick={this.cerrarCobroItems}>Cancelar</Button>
+            <Button variant="outline-secondary" onClick={this.cerrarCobroItems} disabled={this.state.cobrando}>Cancelar</Button>
             <Button
               variant="outline-primary"
               onClick={this.imprimirPrefacturaItems}
@@ -2540,9 +3779,10 @@ class pedidos extends React.Component {
             <Button
               variant="success"
               onClick={this.cobrarItems}
-              disabled={!hayItemsSeleccionados}
+              disabled={!hayItemsSeleccionados || this.state.cobrando}
             >
-              <i className="bi bi-check-lg"></i> Cobrar selección e imprimir
+              <i className="bi bi-check-lg"></i>{" "}
+              {this.state.cobrando ? "Cobrando..." : "Cobrar selección e imprimir"}
             </Button>
           </Modal.Footer>
         </Modal>
@@ -2615,6 +3855,9 @@ class pedidos extends React.Component {
             </Button>
           </Modal.Body>
         </Modal>
+
+        {this.renderModalModificadores()}
+        {this.renderNombreCuentaModal()}
       </body>
     );
   }

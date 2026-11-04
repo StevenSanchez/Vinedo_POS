@@ -22,6 +22,7 @@ out/
 # 2. Permitir explícitamente solo las carpetas y archivos que deseas mantener
 !/api/
 !/vinedopos/
+!/database/
 !/README.md
 !/.gitignore
 
@@ -33,3 +34,9 @@ out/
 # 4. Ignorar archivos de entorno dentro de cualquier subcarpeta
 **/.env
 **/.env.*
+
+# 5. Configuracion local y scripts de diagnostico con credenciales
+api/config.json
+api/check_*.js
+api/request.http
+api/crear_comanda_run.js

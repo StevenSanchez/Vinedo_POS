@@ -16,11 +16,11 @@ app.set('port', parseInt(process.env.VINEDOPOS_API_PORT || '9000', 10))
 
 const configPath = path.join(__dirname, 'config.json')
 let db = {
-    host: '127.0.0.1',
-    port: '3306',
-    user: 'root',
-    password: '12345',
-    database: 'vinedopos',
+    host: process.env.VINEDOPOS_DB_HOST || '127.0.0.1',
+    port: process.env.VINEDOPOS_DB_PORT || '3306',
+    user: process.env.VINEDOPOS_DB_USER || 'root',
+    password: process.env.VINEDOPOS_DB_PASSWORD || '',
+    database: process.env.VINEDOPOS_DB_NAME || 'vinedopos',
     charset: 'utf8mb4'
 }
 if (fs.existsSync(configPath)) {

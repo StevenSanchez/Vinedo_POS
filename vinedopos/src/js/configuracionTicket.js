@@ -169,7 +169,7 @@ class configuracionTicket extends React.Component {
           <Navbar collapseOnSelect expand="lg" bg="dark" variant="dark">
             <Container>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <button id="btNavbar" onClick={() => { window.location.href = "/administracion" }} style={{ padding: "0.3rem 0.7rem" }}>
+                <button className="btnNavbar" onClick={() => { window.location.href = "/administracion" }} style={{ padding: "0.3rem 0.7rem" }}>
                   <i className="bi bi-arrow-left"></i> Volver
                 </button>
                 <Navbar.Brand href="/administracion" className="d-flex align-items-center gap-2">
@@ -180,12 +180,12 @@ class configuracionTicket extends React.Component {
               <Navbar.Toggle aria-controls="responsive-navbar-nav" />
               <Navbar.Collapse id="responsive-navbar-nav">
                 <Nav className="me-auto">
-                  <Nav.Link href="/administracion"><button id="btNavbar">Administración</button></Nav.Link>
-                  <Nav.Link href="/mesas"><button id="btNavbar">Mesas</button></Nav.Link>
+                  <Nav.Link href="/administracion"><button className="btnNavbar">Administración</button></Nav.Link>
+                  <Nav.Link href="/mesas"><button className="btnNavbar">Mesas</button></Nav.Link>
                 </Nav>
                 <Nav>
                   <Nav.Link>
-                    <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                    <button className="btnNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
                   </Nav.Link>
                 </Nav>
               </Navbar.Collapse>

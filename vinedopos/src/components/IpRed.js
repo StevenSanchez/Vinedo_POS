@@ -65,6 +65,7 @@ class IpRed extends React.Component {
     return (
       <>
         <div
+          className="ip-red-qr"
           style={{
             position: "fixed",
             bottom: "6px",
@@ -91,6 +92,7 @@ class IpRed extends React.Component {
         </div>
 
         <div
+          className="ip-red-info"
           style={{
             position: "fixed",
             bottom: "6px",

@@ -40,9 +40,11 @@ const redondear = (valor) => Math.round((Number(valor) || 0) * 100) / 100;
 const resumenVacio = {
   CantidadFacturas: 0,
   Total: 0,
+  EfectivoInicial: 0,
   EfectivoRecibido: 0,
   Vuelto: 0,
   EfectivoNeto: 0,
+  EfectivoEsperado: 0,
   Desde: null,
   Hasta: null
 };
@@ -60,7 +62,12 @@ class cierre extends React.Component {
     observaciones: "",
     modalDetalle: false,
     cargandoDetalle: false,
-    cierreDetalle: null
+    cierreDetalle: null,
+    apertura: null,
+    modalApertura: false,
+    montoApertura: "0",
+    guardandoApertura: false,
+    aperturaTrasCierre: false
   };
 
   componentDidMount() {
@@ -104,6 +111,7 @@ class cierre extends React.Component {
         facturas: Array.isArray(datos.Facturas) ? datos.Facturas : [],
         metodos: Array.isArray(datos.Metodos) ? datos.Metodos : [],
         resumen: { ...resumenVacio, ...(datos.Resumen || {}) },
+        apertura: datos.Apertura || null,
         historial: Array.isArray(historial.data) ? historial.data : [],
         cargando: false
       });
@@ -134,7 +142,70 @@ class cierre extends React.Component {
     if (texto === "") return null;
     const contado = Number(texto);
     if (!Number.isFinite(contado)) return null;
-    return redondear(contado - Number(this.state.resumen.EfectivoNeto || 0));
+    const resumen = this.state.resumen || {};
+    const esperado =
+      resumen.EfectivoEsperado !== undefined && resumen.EfectivoEsperado !== null
+        ? Number(resumen.EfectivoEsperado)
+        : Number(resumen.EfectivoInicial || 0) + Number(resumen.EfectivoNeto || 0);
+    return redondear(contado - esperado);
+  };
+
+  abrirModalApertura = (despuesCierre = false) => {
+    const apertura = this.state.apertura;
+    this.setState({
+      modalApertura: true,
+      aperturaTrasCierre: !!despuesCierre,
+      montoApertura: apertura ? String(apertura.monto) : "0",
+      guardandoApertura: false
+    });
+  };
+
+  cerrarModalApertura = () => {
+    if (this.state.guardandoApertura) return;
+    this.setState({ modalApertura: false, aperturaTrasCierre: false });
+  };
+
+  cambiarMontoApertura = (e) => {
+    this.setState({ montoApertura: e.target.value });
+  };
+
+  guardarApertura = async (montoFijo) => {
+    if (this.state.guardandoApertura) return;
+    const monto =
+      montoFijo !== undefined
+        ? Number(montoFijo)
+        : Number(String(this.state.montoApertura || "").replace(",", "."));
+    if (!Number.isFinite(monto) || monto < 0) {
+      Swal.fire("Monto inválido", "Ingrese un efectivo inicial de 0 o mayor.", "warning");
+      return;
+    }
+    this.setState({ guardandoApertura: true });
+    try {
+      await axios.post(baseUrl + "caja/apertura", {
+        monto: redondear(monto),
+        usuario_id: Number(cookies.get("idUsuario")) || null
+      });
+      this.setState({
+        modalApertura: false,
+        aperturaTrasCierre: false,
+        guardandoApertura: false
+      });
+      await this.cargarTodo();
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Caja abierta con " + this.dinero(monto),
+        showConfirmButton: false,
+        timer: 2200
+      });
+    } catch (e) {
+      this.setState({ guardandoApertura: false });
+      const mensaje =
+        (e.response && e.response.data && e.response.data.error) ||
+        "No se pudo abrir la caja.";
+      Swal.fire("Apertura", mensaje, "error");
+    }
   };
 
   cerrarCaja = async () => {
@@ -201,6 +272,7 @@ class cierre extends React.Component {
       if (accion.isConfirmed) {
         await this.imprimirCierre(creado);
       }
+      this.abrirModalApertura(true);
     } catch (e) {
       this.setState({ procesando: false });
       const mensaje =
@@ -347,6 +419,7 @@ class cierre extends React.Component {
               <th>Usuario</th>
               <th className="der">Facturas</th>
               <th className="der">Total</th>
+              <th className="der">Inicial</th>
               <th className="der">Efectivo neto</th>
               <th className="der">Diferencia</th>
               <th></th>
@@ -360,6 +433,7 @@ class cierre extends React.Component {
                 <td>{c.usuario || "-"}</td>
                 <td className="der num">{c.CantidadFacturas}</td>
                 <td className="der num">{this.dinero(c.Total)}</td>
+                <td className="der num">{this.dinero(c.EfectivoInicial)}</td>
                 <td className="der num">{this.dinero(c.EfectivoNeto)}</td>
                 <td
                   className={
@@ -408,9 +482,11 @@ class cierre extends React.Component {
                 <div><span>Usuario</span><strong>{cierreDetalle.usuario || "-"}</strong></div>
                 <div><span>Facturas</span><strong>{cierreDetalle.CantidadFacturas}</strong></div>
                 <div><span>Total</span><strong>{this.dinero(cierreDetalle.Total)}</strong></div>
+                <div><span>Efectivo inicial</span><strong>{this.dinero(cierreDetalle.EfectivoInicial)}</strong></div>
                 <div><span>Efectivo recibido</span><strong>{this.dinero(cierreDetalle.EfectivoRecibido)}</strong></div>
                 <div><span>Vuelto</span><strong>{this.dinero(cierreDetalle.Vuelto)}</strong></div>
-                <div><span>Efectivo neto</span><strong>{this.dinero(cierreDetalle.EfectivoNeto)}</strong></div>
+                <div><span>Efectivo neto de ventas</span><strong>{this.dinero(cierreDetalle.EfectivoNeto)}</strong></div>
+                <div><span>Efectivo esperado en caja</span><strong>{this.dinero(cierreDetalle.EfectivoEsperado)}</strong></div>
                 <div>
                   <span>Efectivo contado</span>
                   <strong>
@@ -501,6 +577,54 @@ class cierre extends React.Component {
     );
   }
 
+  renderModalApertura() {
+    const {
+      modalApertura,
+      aperturaTrasCierre,
+      montoApertura,
+      guardandoApertura
+    } = this.state;
+    return (
+      <Modal isOpen={modalApertura} toggle={this.cerrarModalApertura} centered>
+        <ModalHeader toggle={this.cerrarModalApertura}>
+          {aperturaTrasCierre ? "Cierre guardado · abrir próxima caja" : "Apertura de caja"}
+        </ModalHeader>
+        <ModalBody>
+          <p className="cierre-apertura-texto">
+            {aperturaTrasCierre
+              ? "El cierre se guardó correctamente. ¿Con cuánto efectivo desea abrir la caja para el próximo turno? Puede abrir en 0."
+              : "Ingrese el efectivo con el que inicia la caja. Si no hay efectivo inicial, puede abrir en 0."}
+          </p>
+          <label className="cierre-campo" htmlFor="montoApertura">
+            <span>Efectivo inicial</span>
+            <input
+              id="montoApertura"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={montoApertura}
+              onChange={this.cambiarMontoApertura}
+              disabled={guardandoApertura}
+              autoFocus
+            />
+          </label>
+          <div className="cierre-apertura-acciones">
+            <Button color="secondary" onClick={this.cerrarModalApertura} disabled={guardandoApertura}>
+              Cancelar
+            </Button>
+            <Button color="primary" onClick={() => this.guardarApertura(0)} disabled={guardandoApertura}>
+              Abrir en 0
+            </Button>
+            <Button color="success" onClick={() => this.guardarApertura()} disabled={guardandoApertura}>
+              {guardandoApertura ? "Abriendo…" : "Abrir con monto"}
+            </Button>
+          </div>
+        </ModalBody>
+      </Modal>
+    );
+  }
+
   render() {
     const {
       cargando,
@@ -518,7 +642,7 @@ class cierre extends React.Component {
           <Container>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <button
-                id="btNavbar"
+                className="btnNavbar"
                 onClick={() => { window.location.href = "/administracion"; }}
                 style={{ padding: "0.3rem 0.7rem" }}
               >
@@ -539,18 +663,18 @@ class cierre extends React.Component {
             <Navbar.Collapse id="responsive-navbar-nav">
               <Nav className="me-auto">
                 <Nav.Link href="/administracion">
-                  <button id="btNavbar">Administración</button>
+                  <button className="btnNavbar">Administración</button>
                 </Nav.Link>
                 <Nav.Link href="/mesas">
-                  <button id="btNavbar">Mesas</button>
+                  <button className="btnNavbar">Mesas</button>
                 </Nav.Link>
                 <Nav.Link href="/facturas">
-                  <button id="btNavbar">Facturas</button>
+                  <button className="btnNavbar">Facturas</button>
                 </Nav.Link>
               </Nav>
               <Nav>
                 <Nav.Link>
-                  <button id="btNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
+                  <button className="btnNavbar" onClick={() => this.cerrarSesion()}>Cerrar sesión</button>
                 </Nav.Link>
               </Nav>
             </Navbar.Collapse>
@@ -564,9 +688,25 @@ class cierre extends React.Component {
                 <h2>Cierre de caja</h2>
                 <p>Revise las facturas cobradas, el desglose por método y el efectivo antes de cerrar.</p>
               </div>
-              <button className="cierre-btn-secundario" onClick={this.recargar} disabled={cargando || procesando}>
-                {cargando ? "Actualizando…" : "Actualizar"}
-              </button>
+              <div className="cierre-cabecera-acciones">
+                {this.state.apertura ? (
+                  <span className="cierre-apertura-chip">
+                    <i className="bi bi-unlock"></i> Caja abierta:{" "}
+                    {this.dinero(this.state.apertura.monto)}
+                  </span>
+                ) : (
+                  <button
+                    className="cierre-btn-secundario"
+                    onClick={() => this.abrirModalApertura(false)}
+                    disabled={cargando || procesando}
+                  >
+                    <i className="bi bi-unlock"></i> Abrir caja
+                  </button>
+                )}
+                <button className="cierre-btn-secundario" onClick={this.recargar} disabled={cargando || procesando}>
+                  {cargando ? "Actualizando…" : "Actualizar"}
+                </button>
+              </div>
             </div>
 
             {error && <div className="cierre-alerta">{error}</div>}
@@ -581,8 +721,12 @@ class cierre extends React.Component {
                 <strong>{this.dinero(resumen.Total)}</strong>
               </div>
               <div className="cierre-stat">
-                <span>Efectivo neto esperado</span>
-                <strong>{this.dinero(resumen.EfectivoNeto)}</strong>
+                <span>Efectivo inicial</span>
+                <strong>{this.dinero(resumen.EfectivoInicial)}</strong>
+              </div>
+              <div className="cierre-stat">
+                <span>Efectivo esperado en caja</span>
+                <strong>{this.dinero(resumen.EfectivoEsperado)}</strong>
               </div>
               <div className="cierre-stat">
                 <span>Vuelto entregado</span>
@@ -608,6 +752,10 @@ class cierre extends React.Component {
                 <h3 className="separado">Arqueo de efectivo</h3>
                 <div className="cierre-arqueo">
                   <div className="cierre-linea">
+                    <span>Efectivo inicial</span>
+                    <strong>{this.dinero(resumen.EfectivoInicial)}</strong>
+                  </div>
+                  <div className="cierre-linea">
                     <span>Efectivo recibido</span>
                     <strong>{this.dinero(resumen.EfectivoRecibido)}</strong>
                   </div>
@@ -615,9 +763,13 @@ class cierre extends React.Component {
                     <span>Vuelto entregado</span>
                     <strong>{this.dinero(resumen.Vuelto)}</strong>
                   </div>
-                  <div className="cierre-linea total">
-                    <span>Efectivo neto esperado</span>
+                  <div className="cierre-linea">
+                    <span>Efectivo neto de ventas</span>
                     <strong>{this.dinero(resumen.EfectivoNeto)}</strong>
+                  </div>
+                  <div className="cierre-linea total">
+                    <span>Efectivo esperado en caja</span>
+                    <strong>{this.dinero(resumen.EfectivoEsperado)}</strong>
                   </div>
                   <label className="cierre-campo" htmlFor="efectivoContado">
                     <span>Efectivo contado (opcional)</span>
@@ -686,6 +838,7 @@ class cierre extends React.Component {
         </div>
 
         {this.renderDetalleModal()}
+        {this.renderModalApertura()}
       </div>
     );
   }

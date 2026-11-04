@@ -1,4 +1,4 @@
-/*
+﻿/*
  * ============================================================================
  * ARCHIVO: src/css/cierre.css
  * PANTALLA: /cierre  (src/js/cierre.js)
@@ -28,7 +28,7 @@ body {
   min-height: 100vh;
 }
 
-#btNavbar {
+.btnNavbar {
   background: none;
   border: none;
   color: white;
@@ -66,7 +66,7 @@ body {
 .cierre-cabecera h2 {
   margin: 0 0 6px;
   font-weight: 700;
-  color: #111827;
+  color: #5b1528;
 }
 
 .cierre-cabecera p {
@@ -87,7 +87,7 @@ body {
 
 .cierre-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
   margin-top: 20px;
 }
@@ -474,4 +474,40 @@ body {
   .cierre-detalle-datos {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.cierre-cabecera-acciones {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cierre-apertura-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 0.88rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cierre-apertura-texto {
+  color: #4b5563;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  margin-bottom: 14px;
+}
+
+.cierre-apertura-acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 18px;
 }

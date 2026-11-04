@@ -129,6 +129,7 @@ export const construirCierreHTML = (cierre, configEntrada) => {
     filasFacturas.split("</tr>").length +
     metodos.length +
     (periodo ? 1 : 0) +
+    2 +
     (tieneDiferencia ? 2 : 0) +
     (observaciones ? 3 : 0);
   const altoLineaMm = fuente * 0.45;
@@ -242,9 +243,11 @@ export const construirCierreHTML = (cierre, configEntrada) => {
 
   <div class="sep"></div>
   <div class="sub">Efectivo</div>
+  ${fila("Efectivo inicial", dinero(datos.EfectivoInicial))}
   ${fila("Efectivo recibido", dinero(datos.EfectivoRecibido))}
   ${fila("Vuelto entregado", dinero(datos.Vuelto))}
-  ${fila("Efectivo neto esperado", dinero(datos.EfectivoNeto), "total")}
+  ${fila("Efectivo neto de ventas", dinero(datos.EfectivoNeto))}
+  ${fila("Efectivo esperado en caja", dinero(datos.EfectivoEsperado), "total")}
   ${
     datos.EfectivoContado !== null && datos.EfectivoContado !== undefined
       ? fila("Efectivo contado", dinero(datos.EfectivoContado))
