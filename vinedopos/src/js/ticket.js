@@ -298,24 +298,40 @@ export const construirTicketHTML = (datos, configEntrada, modo) => {
   if (si(config.mostrar_cajero) && datos.cajero) meta.push(fila("Atendido por", datos.cajero, "texto"));
 
   const filasItems = lineas.map((linea) => {
+    const cantidadLinea = Number(linea.Cantidad) || 0;
+    const guarniciones = guarnicionesTicket(linea);
+    const totalGuarnicionesLinea = guarniciones.reduce(
+      (acc, g) => acc + (Number(g.Precio) || 0) * cantidadLinea,
+      0
+    );
+    // El importe del platillo no incluye las guarniciones: cada una se
+    // muestra en su propia línea para que el cliente vea el desglose.
+    const importeBaseLinea = Math.max(
+      0,
+      Number(linea.Subtotal || 0) - totalGuarnicionesLinea
+    );
+    const precioUnitarioBase =
+      cantidadLinea > 0 ? importeBaseLinea / cantidadLinea : Number(linea.Precio || 0);
+
     const celdas = [];
     if (mostrarCantidad) celdas.push(`<td class="cant">${escapar(linea.Cantidad)}</td>`);
     const unitario = mostrarUnitario
-      ? `<div class="unit">@ ${escapar(formatearMoneda(linea.Precio, formato))}</div>`
+      ? `<div class="unit">@ ${escapar(formatearMoneda(precioUnitarioBase, formato))}</div>`
       : "";
     celdas.push(`<td class="desc">${escapar(linea.Nombre)}${unitario}</td>`);
     if (mostrarSubtotalLinea) {
-      celdas.push(`<td class="importe">${escapar(formatearMoneda(linea.Subtotal, formato))}</td>`);
+      celdas.push(`<td class="importe">${escapar(formatearMoneda(importeBaseLinea, formato))}</td>`);
     }
     let html = `<tr>${celdas.join("")}</tr>`;
 
     // Cada guarnición va en su propia fila: nombre a la izquierda y precio
     // alineado en la misma columna Importe, debajo del precio del platillo.
-    guarnicionesTicket(linea).forEach((g) => {
+    guarniciones.forEach((g) => {
       const celdasGuarnicion = [];
       if (mostrarCantidad) celdasGuarnicion.push(`<td class="cant"></td>`);
-      const precioTexto = Number(g.Precio) > 0
-        ? formatearMoneda(g.Precio, formato)
+      const montoGuarnicion = (Number(g.Precio) || 0) * cantidadLinea;
+      const precioTexto = montoGuarnicion > 0
+        ? formatearMoneda(montoGuarnicion, formato)
         : "";
       celdasGuarnicion.push(
         `<td class="desc guarn-desc">+ ${escapar(g.Nombre)}${
