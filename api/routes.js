@@ -636,6 +636,62 @@ routes.post("/mesas/add/", (req, res) => {
     }
   });
 });
+//Renombrar mesa
+routes.post("/mesas/rename/", (req, res) => {
+  req.getConnection((err, conn) => {
+    if (err) return res.send(err);
+    const MesaID = Number(req.body.MesaID);
+    const nombre = String(req.body.nombre || "").trim();
+    if (!Number.isInteger(MesaID) || MesaID <= 0) {
+      return res.status(400).json({ error: "Mesa inválida." });
+    }
+    if (nombre === "") {
+      return res.status(400).json({ error: "Escriba el nombre de la mesa." });
+    }
+    if (nombre.length > 25) {
+      return res.status(400).json({ error: "El nombre no puede tener más de 25 caracteres." });
+    }
+    conn.query(
+      "SELECT MesaID FROM mesa WHERE Nombre = ? AND MesaID <> ? LIMIT 1",
+      [nombre, MesaID],
+      (errDuplicado, filas) => {
+        if (errDuplicado) {
+          console.log(errDuplicado);
+          return res.status(500).json({ error: "No se pudo validar el nombre." });
+        }
+        if (filas && filas.length > 0) {
+          return res.status(409).json({ error: "Ya existe una mesa con ese nombre." });
+        }
+        conn.query(
+          "UPDATE mesa SET Nombre = ? WHERE MesaID = ?",
+          [nombre, MesaID],
+          (errMesa) => {
+            if (errMesa) {
+              console.log(errMesa);
+              return res.status(500).json({ error: "No se pudo renombrar la mesa." });
+            }
+            // Las cuentas abiertas deben mostrar el nombre nuevo; las
+            // facturas históricas conservan el nombre con el que se cerraron.
+            conn.query(
+              "UPDATE factura SET NombreMesa = ? WHERE MesaID = ? AND estado = 1",
+              [nombre, MesaID],
+              (errFacturas) => {
+                if (errFacturas) {
+                  console.log(errFacturas);
+                  return res.status(500).json({
+                    error: "La mesa se renombró, pero no se pudieron actualizar las cuentas abiertas."
+                  });
+                }
+                res.json({ ok: true, MesaID, Nombre: nombre });
+              }
+            );
+          }
+        );
+      }
+    );
+  });
+});
+
 //Eliminar mesas
 routes.post("/mesas/delete/", (req, res) => {
   req.getConnection((err, conn) => {

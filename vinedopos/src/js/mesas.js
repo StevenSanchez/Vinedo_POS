@@ -48,6 +48,10 @@ class mesas extends React.Component {
     mesasOcupadas: [],
     nombreMN: '',
     modalInsert: false,
+    modalRename: false,
+    mesaRename: null,
+    nombreRename: '',
+    guardandoRename: false,
     dragIndex: null,
     dragOverIndex: null
   }
@@ -58,6 +62,10 @@ class mesas extends React.Component {
       mesasOcupadas: [],
       nombreMN: '',
       modalInsert: false,
+      modalRename: false,
+      mesaRename: null,
+      nombreRename: '',
+      guardandoRename: false,
       dragIndex: null,
       dragOverIndex: null
     })
@@ -172,6 +180,72 @@ class mesas extends React.Component {
     this.refrescarmesas()
   }
 
+  mostrarModalRename = (mesa) => {
+    if (!mesa) return
+    this.setState({
+      modalRename: true,
+      mesaRename: mesa,
+      nombreRename: mesa.Nombre || "",
+      guardandoRename: false
+    })
+  }
+
+  ocultarModalRename = () => {
+    if (this.state.guardandoRename) return
+    this.setState({
+      modalRename: false,
+      mesaRename: null,
+      nombreRename: "",
+      guardandoRename: false
+    })
+  }
+
+  renombrarMesa = async () => {
+    const mesa = this.state.mesaRename
+    const nombre = (this.state.nombreRename || "").trim()
+    if (!mesa) return
+    if (nombre === "") {
+      Swal.fire("Falta el nombre", "Escriba el nombre de la mesa.", "warning")
+      return
+    }
+    if (nombre.length > 25) {
+      Swal.fire("Nombre muy largo", "Máximo 25 caracteres.", "warning")
+      return
+    }
+    if (nombre === mesa.Nombre) {
+      this.ocultarModalRename()
+      return
+    }
+    this.setState({ guardandoRename: true })
+    try {
+      await axios.post(baseUrl + "mesas/rename/", {
+        MesaID: mesa.MesaID,
+        nombre
+      })
+      this.setState({
+        modalRename: false,
+        mesaRename: null,
+        nombreRename: "",
+        guardandoRename: false
+      })
+      await this.refrescarmesas()
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Mesa renombrada",
+        showConfirmButton: false,
+        timer: 1600
+      })
+    } catch (error) {
+      this.setState({ guardandoRename: false })
+      const mensaje =
+        (error.response && error.response.data && error.response.data.error) ||
+        "No se pudo renombrar la mesa."
+      Swal.fire("No se renombró", mensaje, "warning")
+    }
+  }
+
   guardarOrden = async (mesasOrdenadas) => {
     const ordenes = (mesasOrdenadas || this.state.mesasDB || []).map((mesa, index) => ({
       MesaID: mesa.MesaID,
@@ -279,6 +353,11 @@ class mesas extends React.Component {
                   <Nav.Link>
                     <button className="btnNavbar" onClick={() => this.mostrarModal()}>Agregar Mesa</button>
                   </Nav.Link>
+                  <NavDropdown title="Renombrar mesa">
+                    {this.state.mesasDB.map((mesa, index) => (
+                      <DropdownItem key={index} onClick={() => this.mostrarModalRename(mesa)}>{mesa.Nombre}</DropdownItem>
+                    ))}
+                  </NavDropdown>
                   <NavDropdown title="Eliminar mesa">
                     {this.state.mesasDB.map((mesa, index) => (
                       <DropdownItem key={index} onClick={() => this.eliminarmesa(mesa)}>{mesa.Nombre}</DropdownItem>
@@ -348,6 +427,40 @@ class mesas extends React.Component {
           <Modal.Footer>
             <Button variant="outline-secondary" onClick={() => this.ocultarModal()}>Cancelar</Button>
             <Button variant="success" onClick={() => this.insertarMesa()}><i className="bi bi-check-lg"></i> Guardar</Button>
+          </Modal.Footer>
+        </Modal>
+        <Modal show={this.state.modalRename} onHide={() => this.ocultarModalRename()} centered className="mesa-modal">
+          <Modal.Header closeButton>
+            <Modal.Title><i className="bi bi-pencil"></i> Renombrar mesa</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form.Group>
+              <Form.Label className="mesa-label">Nuevo nombre</Form.Label>
+              <Form.Control
+                name="nombreRename"
+                type="text"
+                maxLength={25}
+                placeholder="Ej. Terraza 1"
+                value={this.state.nombreRename || ''}
+                onChange={this.handleChange}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    this.renombrarMesa()
+                  }
+                }}
+              />
+              <Form.Text className="text-muted">
+                Se actualizarán también las cuentas abiertas de esta mesa.
+              </Form.Text>
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="outline-secondary" onClick={() => this.ocultarModalRename()}>Cancelar</Button>
+            <Button variant="success" onClick={() => this.renombrarMesa()} disabled={this.state.guardandoRename}>
+              {this.state.guardandoRename ? "Guardando…" : "Guardar"}
+            </Button>
           </Modal.Footer>
         </Modal>
         <IpRed />
