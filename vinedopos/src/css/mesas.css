@@ -159,11 +159,18 @@ body {
   }
 }
 
+@media (min-width: 576px) {
+  .mesa-modal .modal-dialog {
+    max-width: 480px;
+  }
+}
+
 .mesa-modal .modal-content {
   border-radius: 18px;
   border: none;
   box-shadow: 0 30px 60px rgba(15, 23, 42, 0.25);
   overflow: hidden;
+  text-align: left;
 }
 
 .mesa-modal .modal-header {

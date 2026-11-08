@@ -102,6 +102,20 @@ textarea {
   max-width: calc(100vw - 20px);
 }
 
+@media (min-width: 576px) {
+  .modal-dialog {
+    max-width: 500px;
+  }
+
+  .modal-dialog.modal-lg {
+    max-width: 800px;
+  }
+
+  .modal-dialog.modal-xl {
+    max-width: 1140px;
+  }
+}
+
 .modal-content {
   max-height: calc(100vh - 20px);
   max-height: calc(100dvh - 20px);
